@@ -1,0 +1,50 @@
+---
+name: progress-review
+description: Use about every 30 minutes of running work, at the end of each work interval, and whenever progress stalls (the same failure twice, no new evidence, scope growing, the owner waiting). Checks whether the work is producing useful, validated progress, finds waste, and decides to keep course, adjust or change course - switching mode, cutting scope or trying another approach.
+---
+
+# Progress review: keep course, adjust, or change course
+
+About every 30 minutes of running work, stop briefly and ask whether this is still the fastest path to something the owner can use. The interval is a project fact; 30 minutes is the default. Review at the end of every work interval too, and at once when a stall signal appears.
+
+## How
+
+- **With sub-agents or custom agents:** run the `throughput-reviewer` agent (in this harness's `agents/`) and act on its top finding.
+- **Without them:** answer the questions below yourself, as a separate pass, from the evidence (the progress log, the commits, what's running and for how long), not from memory.
+- Either way, write the verdict as one progress log line.
+
+## The questions
+
+Answer each with evidence:
+
+1. **Constraint:** what limits progress now? Is the work serving it?
+2. **Mode:** is the goal mode still the most valuable one? Working with the owner, are they getting something they can see within about 15 minutes? Unattended, is the most valuable item moving, inside its bounds, with a handoff in view?
+3. **Intervals:** is anything past its interval, or holding unmerged work older than about an hour?
+4. **Checks at the right moment:** is anything running checks this stage doesn't need (a full suite for a style fix, hardening a prototype), or skipping checks it does need (security, data integrity, the live deploy)?
+5. **Quality on the first try:** did the owner have to point out something basic that checking before showing would have caught?
+6. **Feedback latency:** what has the owner waited longest for, and why?
+7. **Traced to intent:** does the work trace to the product intent or the stated goal, or has it drifted into something nobody asked for?
+8. **Waste:** what was done since the last review that didn't move the plan or the owner's experience?
+
+## Stall signals
+
+Review at once, without waiting for the interval, when:
+
+- the same failure, or the same kind of fix, has come back twice;
+- there's been no new evidence (a passing check, a result, something shown) for a whole interval;
+- the scope has grown past the increment that was planned;
+- the owner has been waiting on something longer than the mode promises;
+- you're about to do foundational work that no current goal needs.
+
+## Changing course
+
+| Finding | Change |
+|---|---|
+| The same approach failed twice | Try a different approach, not a third attempt at the same one; or prove the risky part on its own first |
+| The goal's end condition is met | Switch goal mode, and log why |
+| The increment keeps growing | Cut it to the smallest piece that still produces something usable, and queue the rest |
+| Blocked on something only the owner can provide | Record it with options and a recommendation, and move to the next unblocked item |
+| Checks don't match the stage | Drop what the stage doesn't need, or add what it does, and say so |
+| Drifted from the intent | Stop, return to the last traced item, and note what was set aside |
+
+The output is a verdict (keep course, adjust, or change course), the top three changes ranked by expected gain in validated progress per unit of time, each with a concrete action, and one line for the progress log.
