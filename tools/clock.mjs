@@ -82,7 +82,7 @@ export function rolloverReason(/** @type {State} */ s, /** @type {number} */ now
 }
 
 export const rolloverSteps = (/** @type {Config} */ c) =>
-  `At the next safe point (the current step checked, not mid-edit): commit the verified work, write the handoff, add a log line, then start a new session whose first prompt says to read the handoff and resume, with the same mode and bounds. Without a tool that starts sessions, tell the owner to open one with that prompt and run \`${c.cmd} mark rollover\`. Then stop working in this one: one session at a time.`;
+  `At the next safe point (the current step checked, not mid-edit): commit the verified work, write the handoff, add a log line, then start a new session whose first prompt says to read the handoff and resume, with the same mode and bounds. Without a tool that starts sessions, tell the owner to open one with that prompt and run \`${c.cmd} mark rollover\`. Then stop working in this one: one session at a time. This is required; don't start another increment first.`;
 
 /**
  * One hook event: the new state and what to say back. Pure, for tests.
@@ -98,7 +98,7 @@ export function step(state, event, input, now, c) {
   s.seen = now;
   if (event === 'sessionStart') {
     const limits = [c.rolloverMin && `${c.rolloverMin} minutes`, c.rolloverTools && `${c.rolloverTools} tool calls`, c.rolloverCompactions && `${c.rolloverCompactions} compactions`].filter(Boolean).join(', ');
-    return { state: s, output: { additionalContext: `Session clock on (agent-orchestration): a progress review every ${c.reviewMin} minutes; roll over to a new session after ${limits || 'no limit'}, whichever comes first. The clock reminds you after tool results; act on its reminders.` } };
+    return { state: s, output: { additionalContext: `Session clock on (agent-orchestration; mandatory): a progress review every ${c.reviewMin} minutes; roll over to a new session after ${limits || 'no limit'}, whichever comes first. The clock reminds you after tool results. Its reminders are required: act on each one before the next increment, and never disable the clock or loosen its limits; only the owner changes them.` } };
   }
   if (event === 'preCompact') {
     s.compactions += 1;
@@ -109,7 +109,7 @@ export function step(state, event, input, now, c) {
     const why = rolloverReason(s, now, c);
     if (!why || s.rolloverBlocked) return { state: s, output: {} };
     s.rolloverBlocked = now;
-    return { state: s, output: { decision: 'block', reason: `Session clock: this session should roll over, because ${why}. If work remains, roll over now. ${rolloverSteps(c)} If the owner is talking with you and no work is running, ask them in one line whether to roll over now, then stop.` } };
+    return { state: s, output: { decision: 'block', reason: `Session clock (required): this session should roll over, because ${why}. If work remains, roll over now. ${rolloverSteps(c)} If the owner is talking with you and no work is running, ask them in one line whether to roll over now, then stop.` } };
   }
   if (event !== 'postToolUse') return { state: s, output: {} };
 
@@ -139,13 +139,13 @@ export function step(state, event, input, now, c) {
     if (now - s.rolloverNudged >= renudge) {
       s.rolloverNudged = now;
       const late = mins(now - s.rolloverDue);
-      say.push(`Session clock: roll over to a new session as soon as possible, because ${why}${late ? `; due for ${late} minutes` : ''}. ${rolloverSteps(c)}`);
+      say.push(`Session clock (required): roll over to a new session as soon as possible, because ${why}${late ? `; due for ${late} minutes` : ''}. ${rolloverSteps(c)}`);
     }
   }
   if (c.reviewMin > 0 && now - s.lastReview >= c.reviewMin * MIN && now - s.reviewNudged >= renudge) {
     s.reviewNudged = now;
     const late = mins(now - s.lastReview - c.reviewMin * MIN);
-    say.push(`Session clock: progress review due (last ${hhmm(s.lastReview)}, ${mins(now - s.lastReview)} minutes ago${late ? `, ${late} overdue` : ''}). Before the next increment, run the throughput-reviewer agent (or the progress-review questions as a separate pass), act on its top finding and write the verdict as one progress log line. Without the agent or the skill tool, run \`${c.cmd} mark review\` when it's done.`);
+    say.push(`Session clock (required): progress review due (last ${hhmm(s.lastReview)}, ${mins(now - s.lastReview)} minutes ago${late ? `, ${late} overdue` : ''}). Before the next increment, run the throughput-reviewer agent (or the progress-review questions as a separate pass), act on its top finding and write the verdict as one progress log line. Without the agent or the skill tool, run \`${c.cmd} mark review\` when it's done.`);
   }
   return { state: s, output: say.length ? { additionalContext: say.join('\n\n') } : {} };
 }

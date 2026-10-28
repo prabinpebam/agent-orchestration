@@ -12,7 +12,7 @@ About every 30 minutes of running work, stop briefly and ask whether this is sti
 - **With sub-agents or custom agents:** run the `throughput-reviewer` agent (in this harness's `agents/`) and act on its top finding.
 - **Without them:** answer the questions below yourself, as a separate pass, from the evidence (the progress log, the commits, what's running and for how long), not from memory.
 - Either way, write the verdict as one progress log line.
-- **Scheduled, not remembered:** where the session clock is installed (`orchestrate`), it says when a review is due and keeps saying so until one is done. Running the `throughput-reviewer` agent or loading this skill counts; a review done some other way is marked with `node .github/hooks/orchestration-clock.mjs mark review`.
+- **Scheduled and required:** the session clock (`orchestrate`) says when a review is due and keeps saying so until one is done. A due review comes before the next increment, never after it. Running the `throughput-reviewer` agent or loading this skill counts as the review; a review done some other way is marked with `node .github/hooks/orchestration-clock.mjs mark review`. Where the tool has no hooks, keep time by hand on the same schedule.
 
 ## The questions
 
@@ -26,7 +26,7 @@ Answer each with evidence:
 6. **Feedback latency:** what has the owner waited longest for, and why?
 7. **Traced to intent:** does the work trace to the product intent or the stated goal, or has it drifted into something nobody asked for?
 8. **Waste:** what was done since the last review that didn't move the plan or the owner's experience?
-9. **Session cost:** how long has this session run, how many tool calls and context compactions has it had, and is the editor or the agent slowing down? Past the session limit, roll over to a new session at the next safe point (`coordinate`).
+9. **Session cost:** how long has this session run, how many tool calls and context compactions has it had, and is the editor or the agent slowing down? Is the session clock running, and was every reminder acted on? Past the session limit, roll over to a new session at the next safe point (`coordinate`). A missing clock or an ignored reminder is the top finding.
 
 ## Stall signals
 

@@ -5,6 +5,7 @@ This repository is the **agent-orchestration** harness itself: skills, an agent,
 - **Execution control only.** Modes, loops, checks, progress reviews, records, delegation and handoffs. What's worth building and what success means belong to a product-reasoning harness; read product intent, don't define it.
 - **Independent.** Nothing in `skills/`, `agents/`, `templates/` or `tools/` may require another harness. Integration is documented in the README only.
 - **Tool-agnostic.** Never assume sub-agents, timers, hooks, background commands or session memory; give the fallback when a practice needs one. The session clock (`tools/clock.mjs`) runs from hooks where a tool has them; the skills say what to do without it.
+- **The session clock is mandatory.** `orchestrate`, the installed `AGENTS.md` section and the clock's own messages must all say it's required: act on every reminder, never weaken it, and keep time by hand without hooks. Never soften this to advice. `npm test` checks it.
 - **Keep it project-agnostic.** No product names, people, machine paths or stack assumptions in shipped folders. `npm test` checks this.
 - **Skills** are folders under `skills/` with a `SKILL.md` whose frontmatter has `name` (the folder's name) and `description` (starting "Use when…", at most 1024 characters).
 - **The `orchestrate` skill routes to every other skill;** a new skill gets a row in its table and in the README.

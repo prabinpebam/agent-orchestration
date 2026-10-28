@@ -32,6 +32,25 @@ test('a session start says what the clock will ask for', () => {
   assert.match(said(o), /90 minutes, 300 tool calls, 2 compactions/);
 });
 
+test('the clock is mandatory: the entry point, the installed section, the reviewer and every reminder say so', () => {
+  const read = (...p) => readFileSync(join(ROOT, ...p), 'utf8');
+  const entry = read('skills', 'orchestrate', 'SKILL.md');
+  assert.match(entry, /^## The clock: required/m);
+  assert.match(entry, /\*\*The clock is mandatory\.\*\*/);
+  assert.match(entry, /\*\*Never weaken it\.\*\*/);
+  assert.match(entry, /\*\*Without hooks, be the clock by hand\.\*\*/);
+  assert.match(entry, /^description:.*mandatory session clock/m);
+  assert.match(read('tools', 'install.mjs'), /session clock[^\n]*\*\*mandatory\*\*[^\n]*never disable it/);
+  assert.match(read('agents', 'throughput-reviewer.agent.md'), /missing clock or an ignored reminder is the top finding/);
+  assert.match(read('skills', 'progress-review', 'SKILL.md'), /missing clock or an ignored reminder is the top finding/);
+  const out = run([[0, 'sessionStart'], tool(31), [91, 'postToolUse', { toolName: 'view' }], [92, 'agentStop', {}]]);
+  assert.match(said(out[0]), /mandatory/);
+  assert.match(said(out[0]), /never disable the clock or loosen its limits/);
+  assert.match(said(out[1]), /^Session clock \(required\): progress review due/);
+  assert.match(said(out[2]), /Session clock \(required\): roll over/);
+  assert.match(String(out[3].reason), /^Session clock \(required\): this session should roll over/);
+});
+
 test('a progress review is asked for after the interval, not before, and again every 5 minutes until it is done', () => {
   const out = run([[0, 'sessionStart'], tool(10), tool(29), tool(30), tool(32), tool(35), tool(36)]);
   assert.equal(said(out[1]), '');

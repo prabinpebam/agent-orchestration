@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Use at the start of any multi-step task, when deciding how to carry out work, and always when the owner is away or says "unattended". The entry point to agent-orchestration - picks an execution mode (show me the UX sooner, prove the risky assumption, make this production-ready; work with me or keep going unattended), sets bounds, runs the plan-act-check-record-review loop, and routes to modes, stage validation, progress reviews and coordination.
+description: Use at the start of any multi-step task, when deciding how to carry out work, and always when the owner is away or says "unattended". The entry point to agent-orchestration - picks an execution mode (show me the UX sooner, prove the risky assumption, make this production-ready; work with me or keep going unattended), sets bounds, runs the plan-act-check-record-review loop under the mandatory session clock (scheduled progress reviews and session roll-overs), and routes to modes, stage validation, progress reviews and coordination.
 ---
 
 # Orchestrate: run the work, watch it, adapt
@@ -29,6 +29,7 @@ How an agent carries out work: which mode, which checks, how progress is recorde
 
    Say the mode in one line before starting ("Mode: show me the UX sooner, work with me"). The owner can change it with a word.
 3. **Bounds.** Unattended work always has explicit bounds: time, scope, what never to touch, whether the agent may merge, push or deploy, and what to escalate. Use the owner's; propose them when there are none, and never assume publishing is allowed.
+4. **Clock (required).** Before the first increment, confirm the session clock is running: its "Session clock on" notice is in the session's context, or `node .github/hooks/orchestration-clock.mjs status` shows this session. If it isn't, follow "The clock" below before doing any other work. Add "clock on" (or "clock by hand", for a tool without hooks) to the mode line.
 
 ## The loop
 
@@ -44,11 +45,19 @@ plan the next increment → act → check (the smallest check that covers it) �
 - **Adapt:** keep course, adjust, or change course: switch mode, cut scope, try another approach, or park the item and take the next most valuable one.
 - **Roll over:** a long session gets slow and forgetful, for the agent and for the editor showing it. At the session limit (by default 90 minutes, 300 tool calls or 2 context compactions, whichever comes first), hand over to a new session at the next safe point (`coordinate`).
 
-## The clock: scheduled, not remembered
+## The clock: required, scheduled, not remembered
 
-Reviews and roll-overs are the steps most easily forgotten in a long run, so they shouldn't depend on the agent remembering. Where the tool runs hooks, the installer adds the **session clock** (`tools/clock.mjs`; for GitHub Copilot `.github/hooks/orchestration-clock.json`). It counts each session's minutes, tool calls and compactions, and puts a reminder after the next tool result when a review is due or the session should roll over, repeated every 5 minutes until it's done; at the end of a turn with a roll-over due it asks for one more turn to do it. Act on its reminders before starting the next increment. The limits are in the hook configuration (`AO_REVIEW_MIN`, `AO_ROLLOVER_MIN`, `AO_ROLLOVER_TOOLS`, `AO_ROLLOVER_COMPACTIONS`; 0 turns one off), and `node .github/hooks/orchestration-clock.mjs status` shows the clock.
+**Using this kit means running the session clock.** It isn't optional, and no mode, deadline or instruction to keep going turns it off. Reviews and roll-overs are the steps most easily forgotten in a long run, so they never depend on the agent remembering.
 
-Without hooks, be the clock: at every progress log line, compare the time with the last review line and with the session's first line, and act when either is past its limit.
+Where the tool runs hooks, the installer adds the **session clock** (`tools/clock.mjs`; for GitHub Copilot `.github/hooks/orchestration-clock.json`). It counts each session's minutes, tool calls and compactions, and adds a reminder after the next tool result when a review is due or the session should roll over. The reminder repeats every 5 minutes until the step is done. At the end of a turn with a roll-over due, it asks for one more turn to do it. The limits are in the hook configuration (`AO_REVIEW_MIN`, `AO_ROLLOVER_MIN`, `AO_ROLLOVER_TOOLS`, `AO_ROLLOVER_COMPACTIONS`), and `node .github/hooks/orchestration-clock.mjs status` shows the clock.
+
+What's mandatory:
+
+- **Its reminders are instructions.** When one says a review is due, run the review before the next increment. When one says roll over, finish the current step, check it, then roll over (`coordinate`). Never start another increment first. When the clock asks for one more turn, use that turn to roll over; don't just end it again.
+- **Never weaken it.** Don't delete or edit the hooks, raise a limit or set one to 0 (which turns it off) to get more done. Only the owner changes the limits, and the change goes in the project facts in `AGENTS.md`.
+- **Missing or broken means fix it first.** No "Session clock on" notice, or a `status` that doesn't show this session, in a tool that has hooks: run the kit's installer (`node <kit>/tools/install.mjs`), or tell the owner in one line that the hooks aren't loading. Then be the clock by hand until it's back.
+- **Without hooks, be the clock by hand.** At every progress log line, compare the time with the last review line and with the session's first line, count the compactions you've seen, and act as soon as any limit is reached. Same limits, same obligations.
+- **A skipped or late review or roll-over is a finding.** The next review reports it (`progress-review`, question 9).
 
 ## Which skill, when
 
@@ -70,6 +79,7 @@ Without hooks, be the clock: at every progress log line, compare the time with t
 7. **Never take the owner's focus or data.** No focus-stealing windows, no restarting their running app or server without asking, no tests against their real data, accounts or remotes.
 8. **Escalate the irreversible.** Anything destructive, public, costly or outside the bounds waits for the owner, with the options laid out, while other work continues.
 9. **Short sessions.** Hand over to a new session at the session limit rather than letting one run until it slows down; the records carry the work across, so nothing is lost.
+10. **The clock is mandatory.** Every session runs with the session clock, or keeps time by hand where the tool has no hooks. Act on every reminder, and never weaken the clock to keep working.
 
 ## When tools differ
 
@@ -79,7 +89,7 @@ Coding agents and editors don't offer the same capabilities, and none is complet
 |---|---|
 | Sub-agents or custom agents | Do the review or exploration yourself, as a separate pass with the same questions |
 | A clock or timer | Read the time at each step boundary (the shell's date command) and from the log's timestamps |
-| Hooks (the session clock) | At every log line, compare the time with the last review and the session's start, and act on what's past its limit |
+| Hooks (the session clock) | Still required: keep time by hand. At every log line, compare the time with the last review and the session's start, and act on any limit that's been reached |
 | Starting a new session | Write the handoff, give the owner the one line to start the next session with, and stop |
 | Background commands | Run long checks at the end of an interval, not in the middle of an edit |
 | Memory between sessions | The work plan, the progress log and the handoff are the memory; read them first |

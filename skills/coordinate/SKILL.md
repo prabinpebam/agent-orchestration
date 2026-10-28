@@ -62,7 +62,7 @@ End every unattended stretch with a handoff another person or agent can act on w
 
 A session that runs for hours slows down (the editor holds the whole conversation) and forgets (each compaction loses detail). Hand over to a new session instead of letting it run on.
 
-**When:** at the session limit, by default 90 minutes, 300 tool calls or 2 context compactions, whichever comes first (a project fact); when the session clock says so (`orchestrate`); or sooner, when the editor or the agent is slowing down. Roll over at the next safe point: the current step checked, never mid-edit or with a check still running.
+**When:** at the session limit, by default 90 minutes, 300 tool calls or 2 context compactions, whichever comes first (a project fact); whenever the session clock says so, which is mandatory (`orchestrate`); or sooner, when the editor or the agent is slowing down. Roll over at the next safe point: once the current step is checked, never mid-edit or with a check still running. Never start another increment first.
 
 **How:**
 

@@ -33,7 +33,11 @@ It decides **how** to do the work, not **what** is worth building. It reads prod
 
 ## The session clock
 
-Long runs forget the two things that keep them healthy: the review every 30 minutes, and handing over to a fresh session before the old one slows down (an editor holding hours of conversation gets sluggish, and each context compaction loses detail). The clock makes both scheduled. For GitHub Copilot (VS Code, the CLI and the app share the hook format) the installer writes `.github/hooks/orchestration-clock.json`, which runs `.github/hooks/orchestration-clock.mjs`:
+Long runs forget the two things that keep them healthy: the review every 30 minutes, and handing over to a fresh session before the old one slows down (an editor holding hours of conversation gets sluggish, and each context compaction loses detail). The clock makes both scheduled.
+
+**The clock is mandatory.** It's part of using this kit, not an add-on. Every session that runs work under these skills runs with it. Where a tool has no hooks, the agent keeps time by hand against the same limits. Its reminders are instructions: a due review comes before the next increment, and a due roll-over comes at the next safe point. The agent never disables the clock or loosens its limits; only the owner does, and records it in the project facts. A missing clock is fixed first (re-run the installer), and the progress review reports a skipped reminder as its top finding.
+
+For GitHub Copilot (VS Code, the CLI and the app share the hook format) the installer writes `.github/hooks/orchestration-clock.json`, which runs `.github/hooks/orchestration-clock.mjs`:
 
 | Hook | What the clock does |
 |---|---|
@@ -42,7 +46,7 @@ Long runs forget the two things that keep them healthy: the review every 30 minu
 | `preCompact` | Counts the compaction |
 | `agentStop` | With a roll-over due, asks for one more turn to do it (once) |
 
-Limits live in the hook configuration's `env`: `AO_REVIEW_MIN` (30), `AO_ROLLOVER_MIN` (90), `AO_ROLLOVER_TOOLS` (300), `AO_ROLLOVER_COMPACTIONS` (2); 0 turns one off. A review counts when the agent runs the `throughput-reviewer` agent, loads the `progress-review` skill or runs `mark review`; a roll-over counts when it starts a new session with a session tool, or runs `mark rollover` after asking the owner to open one. `node .github/hooks/orchestration-clock.mjs status` shows the clock. State is one small file per session in the system's temporary folder (or `AO_CLOCK_DIR`), never in the project; tool arguments are read only to recognise those commands. A broken clock prints `{}` and never stops work. For other tools, `orchestrate` gives the fallback: compare the time with the last review and the session's start at every log line.
+Limits live in the hook configuration's `env`: `AO_REVIEW_MIN` (30), `AO_ROLLOVER_MIN` (90), `AO_ROLLOVER_TOOLS` (300), `AO_ROLLOVER_COMPACTIONS` (2); 0 turns one off. A review counts when the agent runs the `throughput-reviewer` agent, loads the `progress-review` skill or runs `mark review`; a roll-over counts when it starts a new session with a session tool, or runs `mark rollover` after asking the owner to open one. `node .github/hooks/orchestration-clock.mjs status` shows the clock. State is one small file per session in the system's temporary folder (or `AO_CLOCK_DIR`), never in the project; tool arguments are read only to recognise those commands. A broken clock prints `{}` and never stops work. For other tools, `orchestrate` gives the fallback, which is just as binding: compare the time with the last review and the session's start at every log line.
 
 ## Modes
 
