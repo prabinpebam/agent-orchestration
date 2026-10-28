@@ -1,6 +1,6 @@
 ---
 name: coordinate
-description: Use when keeping a progress log, reporting status, writing a handoff at the end of a work stretch, delegating to sub-agents, or getting an independent review before a risky merge. Durable progress records, status tables, handoffs another session can resume from, bounded delegation, and reports that lead with what a person can do now.
+description: Use when keeping a progress log, reporting status, writing a handoff at the end of a work stretch, rolling over to a new session, delegating to sub-agents, or getting an independent review before a risky merge. Durable progress records, status tables, handoffs another session can resume from, bounded delegation, and reports that lead with what a person can do now.
 ---
 
 # Coordinate: records, reviews, delegation and handoffs
@@ -57,3 +57,17 @@ End every unattended stretch with a handoff another person or agent can act on w
 - **Try first:** the one thing to open or run, and what they should see.
 - **Not checked:** what was skipped deliberately, and why.
 - **Changes to the intent:** assumptions proven or disproven, promises at risk, differences between what was built and what was specified, for whoever owns the product intent.
+
+## Rolling over to a new session
+
+A session that runs for hours slows down (the editor holds the whole conversation) and forgets (each compaction loses detail). Hand over to a new session instead of letting it run on.
+
+**When:** at the session limit, by default 90 minutes, 300 tool calls or 2 context compactions, whichever comes first (a project fact); when the session clock says so (`orchestrate`); or sooner, when the editor or the agent is slowing down. Roll over at the next safe point: the current step checked, never mid-edit or with a check still running.
+
+**How:**
+
+1. Commit the verified work, within the bounds. Work that isn't verified goes in the handoff as in progress, never committed as done.
+2. Write the handoff (`templates/handoff.md`), starting with the line to resume with.
+3. Add a log line: `rollover: <why>; handoff written; <commit>`.
+4. Start the new session with a short first prompt: read the handoff and resume, with the same mode and bounds, and roll over again at the next session limit. Where the tool can start a session, start it; otherwise give the owner that line to start it with, and with the session clock run its `mark rollover`.
+5. Stop working in the old session. One session at a time works in a project; two would edit the same files.

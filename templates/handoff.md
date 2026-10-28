@@ -1,8 +1,10 @@
 # Handoff
 
-Written at the end of every unattended stretch or session, so the owner (or the next agent) can act without asking anything.
+Written at the end of every unattended stretch or session, and at every roll-over to a new session, so the owner (or the next agent) can act without asking anything.
 
 ```
+Resume with: read this file, then <the work plan and the intent>; mode <goal · attention>; bounds <…>; roll over again at the next session limit.
+
 ## Done (with evidence)
 - <what a person can do now> — <tests, runs, commits>
 

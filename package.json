@@ -9,7 +9,7 @@
     "agent-orchestration-install": "tools/install.mjs"
   },
   "scripts": {
-    "test": "node --test test/harness.test.mjs"
+    "test": "node --test test/harness.test.mjs test/clock.test.mjs"
   },
   "repository": { "type": "git", "url": "https://github.com/prabinpebam/agent-orchestration.git" }
 }

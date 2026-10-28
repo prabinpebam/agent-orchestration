@@ -14,6 +14,9 @@
  * - The project's AGENTS.md (and CLAUDE.md, when there is one) gets a section between its own markers, with the
  *   project facts the skills read, to fill in. Other sections, including other harnesses', are left alone. Run
  *   again to update; the section's filled-in facts are kept.
+ * - For Copilot, the session clock goes to `.github/hooks/` (with --global: `~/.copilot/hooks/`): `orchestration-clock.mjs`
+ *   and the hook configuration `orchestration-clock.json`, which runs it on session start, after each tool call, before
+ *   a compaction and at the end of a turn. A configuration already there is kept, with any limits tuned in it.
  * - --templates copies the work plan, progress log and handoff starters into a folder, keeping any file already there.
  * Without --for it installs for Copilot, plus Claude Code when the project has .claude/ or CLAUDE.md, plus the
  * open skills layout when the project has .agents/.
@@ -36,11 +39,11 @@ export function section(/** @type {string | null} */ facts) {
 - **Commands by validation tier:** unit, related files \`<…>\` · types \`<…>\` · one end-to-end test \`<…> -g "<title>"\` · full suites \`<…>\` · production build with budgets \`<…>\`
 - **Progress log:** <a path outside the repository, or an ignored folder inside it when the agent can't write outside>
 - **Branches and merges:** <work branch or worktree> · merge with \`<…>\` · deploy watched with \`<…>\` · the agent may: <merge, push, deploy, or none: the owner does> · must never break: <the live product, an API>
-- **Reviews and escalation:** review every <30> minutes · always escalate: <what waits for the owner>`;
+- **Reviews and escalation:** review every <30> minutes · roll over to a new session after <90> minutes, <300> tool calls or <2> compactions (the session clock's limits, in its hook configuration) · always escalate: <what waits for the owner>`;
   return `${START}
 ## Orchestration (agent-orchestration harness)
 
-This project uses the [agent-orchestration](https://github.com/prabinpebam/agent-orchestration) skills to carry out work. Start with the \`orchestrate\` skill: it picks the mode (show me the UX sooner, prove the risky assumption, make this production-ready; work with me or keep going unattended) and routes to \`execution-modes\`, \`stage-validation\`, \`progress-review\` and \`coordinate\`. Agent: \`throughput-reviewer\` (about every 30 minutes of running work). These skills decide how work is run, not what to build; product intent comes from the files named below when there are any.
+This project uses the [agent-orchestration](https://github.com/prabinpebam/agent-orchestration) skills to carry out work. Start with the \`orchestrate\` skill: it picks the mode (show me the UX sooner, prove the risky assumption, make this production-ready; work with me or keep going unattended) and routes to \`execution-modes\`, \`stage-validation\`, \`progress-review\` and \`coordinate\`. Agent: \`throughput-reviewer\` (about every 30 minutes of running work). The session clock (Copilot hooks in \`.github/hooks/orchestration-clock.json\`) says when a review is due and when to roll over to a new session. These skills decide how work is run, not what to build; product intent comes from the files named below when there are any.
 
 ${facts ?? defaultFacts}
 ${END}`;
@@ -76,8 +79,24 @@ export function plan(/** @type {string} */ target, /** @type {string[]} */ kinds
     if (!r) throw new Error(`Unknown --for ${kind}: use copilot, claude or agents`);
     for (const s of skills()) copies.push({ from: join(HERE, 'skills', s), to: join(r.skills, s) });
     if (r.agents) for (const a of agents()) copies.push({ from: join(HERE, 'agents', a), to: join(r.agents, kind === 'claude' ? a.replace('.agent.md', '.md') : a) });
+    if (kind === 'copilot') copies.push({ from: join(HERE, 'tools', 'clock.mjs'), to: join(hooksDir(base, global), CLOCK) });
   }
   return copies;
+}
+
+export const CLOCK = 'orchestration-clock.mjs';
+export const CLOCK_HOOKS = 'orchestration-clock.json';
+const hooksDir = (/** @type {string} */ base, /** @type {boolean} */ global) => join(base, global ? '.copilot' : '.github', 'hooks');
+
+/** The Copilot hook configuration that runs the session clock, and where it goes. */
+export function clockHooks(/** @type {string} */ target, /** @type {boolean} */ global) {
+  const dir = hooksDir(global ? homedir() : target, global);
+  const script = global ? join(dir, CLOCK).replace(/\\/g, '/') : `.github/hooks/${CLOCK}`;
+  const cmd = `node ${global ? `"${script}"` : script}`;
+  const env = { AO_REVIEW_MIN: '30', AO_ROLLOVER_MIN: '90', AO_ROLLOVER_TOOLS: '300', AO_ROLLOVER_COMPACTIONS: '2', AO_CLOCK_CMD: cmd };
+  const entry = (/** @type {string} */ event) => [{ type: 'command', command: `${cmd} ${event}`, timeoutSec: 10, env }];
+  const json = { version: 1, hooks: Object.fromEntries(['sessionStart', 'postToolUse', 'preCompact', 'agentStop'].map((e) => [e, entry(e)])) };
+  return { file: join(dir, CLOCK_HOOKS), text: `${JSON.stringify(json, null, 2)}\n` };
 }
 
 /** The agents to install for when --for isn't given. */
@@ -116,6 +135,17 @@ function main(/** @type {string[]} */ argv) {
       cpSync(c.from, c.to, { recursive: true });
     }
   }
+  if (kinds.includes('copilot')) {
+    const h = clockHooks(root, global);
+    if (existsSync(h.file)) say(`keep ${h.file} (the session clock's hooks and limits)`);
+    else {
+      say(`create ${h.file} (the session clock's hooks)`);
+      if (!dry) {
+        mkdirSync(dirname(h.file), { recursive: true });
+        writeFileSync(h.file, h.text);
+      }
+    }
+  }
   if (!global) {
     for (const name of ['AGENTS.md', ...(existsSync(join(root, 'CLAUDE.md')) ? ['CLAUDE.md'] : [])]) {
       const file = join(root, name);
@@ -133,7 +163,7 @@ function main(/** @type {string[]} */ argv) {
       if (!dry) cpSync(join(HERE, 'templates'), to, { recursive: true, force: false, errorOnExist: false });
     }
   }
-  say(`installed ${skills().length} skills and ${agents().length} agents for ${kinds.join(', ')}${global ? ' (for every project on this computer)' : ''}`);
+  say(`installed ${skills().length} skills and ${agents().length} agents for ${kinds.join(', ')}${kinds.includes('copilot') ? ', with the session clock' : ''}${global ? ' (for every project on this computer)' : ''}`);
   if (!global) say('next: fill in the "Project facts" in the Orchestration section of AGENTS.md');
   return 0;
 }

@@ -34,6 +34,7 @@ How an agent carries out work: which mode, which checks, how progress is recorde
 
 ```
 plan the next increment → act → check (the smallest check that covers it) → record → review about every 30 minutes → adapt
+                                                                    → roll over to a new session at the session limit
 ```
 
 - **Plan:** the next increment is the smallest piece that produces something usable or something learned. Write it in the work plan (`templates/work-plan.md` of this harness) with how it will be checked.
@@ -41,6 +42,13 @@ plan the next increment → act → check (the smallest check that covers it) �
 - **Record:** a progress log line per meaningful step, and the evidence beside what it proves (`coordinate`).
 - **Review:** about every 30 minutes of running work, ask whether this is still the fastest path to validated progress (`progress-review`).
 - **Adapt:** keep course, adjust, or change course: switch mode, cut scope, try another approach, or park the item and take the next most valuable one.
+- **Roll over:** a long session gets slow and forgetful, for the agent and for the editor showing it. At the session limit (by default 90 minutes, 300 tool calls or 2 context compactions, whichever comes first), hand over to a new session at the next safe point (`coordinate`).
+
+## The clock: scheduled, not remembered
+
+Reviews and roll-overs are the steps most easily forgotten in a long run, so they shouldn't depend on the agent remembering. Where the tool runs hooks, the installer adds the **session clock** (`tools/clock.mjs`; for GitHub Copilot `.github/hooks/orchestration-clock.json`). It counts each session's minutes, tool calls and compactions, and puts a reminder after the next tool result when a review is due or the session should roll over, repeated every 5 minutes until it's done; at the end of a turn with a roll-over due it asks for one more turn to do it. Act on its reminders before starting the next increment. The limits are in the hook configuration (`AO_REVIEW_MIN`, `AO_ROLLOVER_MIN`, `AO_ROLLOVER_TOOLS`, `AO_ROLLOVER_COMPACTIONS`; 0 turns one off), and `node .github/hooks/orchestration-clock.mjs status` shows the clock.
+
+Without hooks, be the clock: at every progress log line, compare the time with the last review line and with the session's first line, and act when either is past its limit.
 
 ## Which skill, when
 
@@ -49,7 +57,7 @@ plan the next increment → act → check (the smallest check that covers it) �
 | Choose or switch a mode; decide what to produce first and what to defer | `execution-modes` |
 | Decide which checks to run or what evidence a stage needs; run a build-check-fix loop; merge | `stage-validation` |
 | Pause after about 30 minutes of work, finish an interval, or notice progress stalling | `progress-review` |
-| Keep the progress log, report status, delegate, get an independent review, or hand over | `coordinate` |
+| Keep the progress log, report status, delegate, get an independent review, hand over, or roll over to a new session | `coordinate` |
 
 ## Rules that hold everywhere
 
@@ -61,6 +69,7 @@ plan the next increment → act → check (the smallest check that covers it) �
 6. **Durable records.** Anything another session or agent needs is written down: the work plan, the progress log, the handoff. Memory doesn't survive.
 7. **Never take the owner's focus or data.** No focus-stealing windows, no restarting their running app or server without asking, no tests against their real data, accounts or remotes.
 8. **Escalate the irreversible.** Anything destructive, public, costly or outside the bounds waits for the owner, with the options laid out, while other work continues.
+9. **Short sessions.** Hand over to a new session at the session limit rather than letting one run until it slows down; the records carry the work across, so nothing is lost.
 
 ## When tools differ
 
@@ -70,6 +79,8 @@ Coding agents and editors don't offer the same capabilities, and none is complet
 |---|---|
 | Sub-agents or custom agents | Do the review or exploration yourself, as a separate pass with the same questions |
 | A clock or timer | Read the time at each step boundary (the shell's date command) and from the log's timestamps |
+| Hooks (the session clock) | At every log line, compare the time with the last review and the session's start, and act on what's past its limit |
+| Starting a new session | Write the handoff, give the owner the one line to start the next session with, and stop |
 | Background commands | Run long checks at the end of an interval, not in the middle of an edit |
 | Memory between sessions | The work plan, the progress log and the handoff are the memory; read them first |
 | Writing outside the workspace | Keep the progress log in an ignored folder inside it (`.agent-orchestration/`, listed in `.gitignore`), and record that path as the project fact |
@@ -78,4 +89,4 @@ Coding agents and editors don't offer the same capabilities, and none is complet
 
 ## Project facts
 
-The installer adds an **Orchestration** section to the project's `AGENTS.md` with the facts these skills read: where product intent lives, the commands for each validation tier, the progress log's path, the work plan, branch and merge rules and what the agent may merge, push or deploy, what must never break, and the review interval. Each is optional; a skill proposes one when it's missing.
+The installer adds an **Orchestration** section to the project's `AGENTS.md` with the facts these skills read: where product intent lives, the commands for each validation tier, the progress log's path, the work plan, branch and merge rules and what the agent may merge, push or deploy, what must never break, the review interval and the session limits. Each is optional; a skill proposes one when it's missing.

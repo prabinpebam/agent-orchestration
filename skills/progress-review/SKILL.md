@@ -12,6 +12,7 @@ About every 30 minutes of running work, stop briefly and ask whether this is sti
 - **With sub-agents or custom agents:** run the `throughput-reviewer` agent (in this harness's `agents/`) and act on its top finding.
 - **Without them:** answer the questions below yourself, as a separate pass, from the evidence (the progress log, the commits, what's running and for how long), not from memory.
 - Either way, write the verdict as one progress log line.
+- **Scheduled, not remembered:** where the session clock is installed (`orchestrate`), it says when a review is due and keeps saying so until one is done. Running the `throughput-reviewer` agent or loading this skill counts; a review done some other way is marked with `node .github/hooks/orchestration-clock.mjs mark review`.
 
 ## The questions
 
@@ -25,6 +26,7 @@ Answer each with evidence:
 6. **Feedback latency:** what has the owner waited longest for, and why?
 7. **Traced to intent:** does the work trace to the product intent or the stated goal, or has it drifted into something nobody asked for?
 8. **Waste:** what was done since the last review that didn't move the plan or the owner's experience?
+9. **Session cost:** how long has this session run, how many tool calls and context compactions has it had, and is the editor or the agent slowing down? Past the session limit, roll over to a new session at the next safe point (`coordinate`).
 
 ## Stall signals
 
@@ -34,7 +36,8 @@ Review at once, without waiting for the interval, when:
 - there's been no new evidence (a passing check, a result, something shown) for a whole interval;
 - the scope has grown past the increment that was planned;
 - the owner has been waiting on something longer than the mode promises;
-- you're about to do foundational work that no current goal needs.
+- you're about to do foundational work that no current goal needs;
+- the session is past its limit, or the editor or the agent is visibly slowing down.
 
 ## Changing course
 
@@ -46,5 +49,6 @@ Review at once, without waiting for the interval, when:
 | Blocked on something only the owner can provide | Record it with options and a recommendation, and move to the next unblocked item |
 | Checks don't match the stage | Drop what the stage doesn't need, or add what it does, and say so |
 | Drifted from the intent | Stop, return to the last traced item, and note what was set aside |
+| The session is past its limit, or slowing down | Roll over to a new session at the next safe point (`coordinate`) |
 
 The output is a verdict (keep course, adjust, or change course), the top three changes ranked by expected gain in validated progress per unit of time, each with a concrete action, and one line for the progress log.
