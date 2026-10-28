@@ -35,6 +35,7 @@ IDs: product IDs (P1, U1, A1, O1, PD1, 1.1) are cited only when the product inte
 | May merge, push, deploy | <which of them the agent may do; the rest are the owner's actions, named in the handoff> |
 | Escalate when | <a credential, a decision with lasting consequences, anything irreversible, public or costly> |
 | Review interval | <30 minutes unless a project fact says otherwise> |
+| Review build | <where the owner tries the work: its own checkout at the last validated commit, its port or data folder, how to refresh it> |
 
 ## 3. Increments
 
@@ -64,5 +65,7 @@ Execution choices only. A product question the intent already lists (O1) is cite
 | Increment | State | Evidence |
 |---|---|---|
 | I1 | Not started | |
+
+**Review build:** <where it is> — shows <commit>.
 
 **Not checked:** <what was skipped deliberately, and why>.

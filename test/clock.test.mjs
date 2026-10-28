@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULTS, config, hook, recognise, rolloverReason, step } from '../tools/clock.mjs';
+import { DEFAULTS, config, hook, latest, recognise, rolloverReason, samePath, step } from '../tools/clock.mjs';
 import { clockHooks, CLOCK, CLOCK_HOOKS } from '../tools/install.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -134,6 +134,20 @@ test('from the command line: a hook event on stdin, then mark and status for the
   assert.match(JSON.parse(out).additionalContext, /Session clock on/);
   assert.match(execFileSync(process.execPath, [clock, 'mark', 'review'], { cwd, env, encoding: 'utf8' }), /Marked review/);
   assert.match(execFileSync(process.execPath, [clock, 'status'], { cwd, env, encoding: 'utf8' }), /0 tool calls, 0 compactions; last review \d\d:\d\d; no roll-over due/);
+});
+
+test('status and mark find the session when the hook reports the folder in another letter case on Windows', () => {
+  assert.ok(samePath('e:\\Projects\\app', 'E:\\Projects\\app', 'win32'), 'drive letter');
+  assert.ok(samePath('C:\\Work\\App\\', 'c:\\work\\app', 'win32'), 'case and trailing separator');
+  assert.ok(!samePath('C:\\work\\app', 'C:\\work\\other', 'win32'));
+  assert.ok(!samePath('/work/App', '/work/app', 'linux'), 'case-sensitive elsewhere');
+  assert.ok(samePath('/work/app/', '/work/app', 'linux'));
+
+  const dir = mkdtempSync(join(tmpdir(), 'clock-case-'));
+  const cwd = mkdtempSync(join(tmpdir(), 'clock-case-project-'));
+  const reported = process.platform === 'win32' ? cwd.replace(/^[A-Za-z]/, (d) => (d === d.toUpperCase() ? d.toLowerCase() : d.toUpperCase())) : cwd;
+  hook('sessionStart', JSON.stringify({ sessionId: 'case', cwd: reported }), { AO_CLOCK_DIR: dir }, T0);
+  assert.equal(latest(dir, cwd)?.state.cwd, reported);
 });
 
 test('the installer writes the Copilot hooks once, keeps a tuned copy, and the hooks run the installed clock', () => {

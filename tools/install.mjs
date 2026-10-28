@@ -13,7 +13,7 @@
  *   without custom agents use the same questions from the `progress-review` skill.
  * - The project's AGENTS.md (and CLAUDE.md, when there is one) gets a section between its own markers, with the
  *   project facts the skills read, to fill in. Other sections, including other harnesses', are left alone. Run
- *   again to update; the section's filled-in facts are kept.
+ *   again to update; the section's filled-in facts are kept, and a fact the harness added since is added as its placeholder.
  * - For Copilot, the session clock goes to `.github/hooks/` (with --global: `~/.copilot/hooks/`): `orchestration-clock.mjs`
  *   and the hook configuration `orchestration-clock.json`, which runs it on session start, after each tool call, before
  *   a compaction and at the end of a turn. A configuration already there is kept, with any limits tuned in it.
@@ -39,14 +39,28 @@ export function section(/** @type {string | null} */ facts) {
 - **Commands by validation tier:** unit, related files \`<…>\` · types \`<…>\` · one end-to-end test \`<…> -g "<title>"\` · full suites \`<…>\` · production build with budgets \`<…>\`
 - **Progress log:** <a path outside the repository, or an ignored folder inside it when the agent can't write outside>
 - **Branches and merges:** <work branch or worktree> · merge with \`<…>\` · deploy watched with \`<…>\` · the agent may: <merge, push, deploy, or none: the owner does> · must never break: <the live product, an API>
+- **Review build:** <how to start and refresh it (its own checkout, such as a git worktree at the last validated commit, with its own port or user-data folder and demo data), and where it is (an address, or the app and how to open it)>
 - **Reviews and escalation:** review every <30> minutes · roll over to a new session after <90> minutes, <300> tool calls or <2> compactions (the session clock's limits, in its hook configuration) · always escalate: <what waits for the owner>`;
   return `${START}
 ## Orchestration (agent-orchestration harness)
 
-This project uses the [agent-orchestration](https://github.com/prabinpebam/agent-orchestration) skills to carry out work. Start with the \`orchestrate\` skill: it picks the mode (show me the UX sooner, prove the risky assumption, make this production-ready; work with me or keep going unattended) and routes to \`execution-modes\`, \`stage-validation\`, \`progress-review\` and \`coordinate\`. Agent: \`throughput-reviewer\` (about every 30 minutes of running work). The session clock (Copilot hooks in \`.github/hooks/orchestration-clock.json\`) is **mandatory**: it says when a review is due and when to roll over to a new session. Act on every reminder before the next increment, and never disable it or loosen its limits without the owner. Where the tool has no hooks, keep time by hand on the same limits. These skills decide how work is run, not what to build; product intent comes from the files named below when there are any.
+This project uses the [agent-orchestration](https://github.com/prabinpebam/agent-orchestration) skills to carry out work. Start with the \`orchestrate\` skill: it picks the mode (show me the UX sooner, prove the risky assumption, make this production-ready; work with me or keep going unattended) and routes to \`execution-modes\`, \`stage-validation\`, \`progress-review\` and \`coordinate\`. Agent: \`throughput-reviewer\` (about every 30 minutes of running work). The session clock (Copilot hooks in \`.github/hooks/orchestration-clock.json\`) is **mandatory**: it says when a review is due and when to roll over to a new session. Act on every reminder before the next increment, and never disable it or loosen its limits without the owner. Where the tool has no hooks, keep time by hand on the same limits. A **review build** is always running for the owner to try: built from the last validated commit, isolated from development (its own checkout, port or user-data folder, and demo data), refreshed at each validated increment or stage close, and named in every status report and handoff. These skills decide how work is run, not what to build; product intent comes from the files named below when there are any.
 
-${facts ?? defaultFacts}
+${mergeFacts(facts, defaultFacts)}
 ${END}`;
+}
+
+/** The project's filled-in facts, plus any fact the harness added since (as its placeholder line), before the last fact. */
+export function mergeFacts(/** @type {string | null} */ facts, /** @type {string} */ defaults) {
+  if (!facts) return defaults;
+  const label = (/** @type {string} */ line) => /^- \*\*([^*]+):\*\*/.exec(line)?.[1];
+  const missing = defaults.split('\n').filter((l) => label(l) && !facts.includes(`**${label(l)}:**`));
+  if (!missing.length) return facts;
+  const lines = facts.split('\n');
+  let at = lines.length;
+  for (let i = lines.length - 1; i >= 0; i--) if (label(lines[i])) { at = i; break; }
+  lines.splice(at, 0, ...missing);
+  return lines.join('\n');
 }
 
 /** AGENTS.md with the harness's section added or updated, keeping the project's filled-in facts. */

@@ -26,7 +26,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, win32 } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const MIN = 60_000;
@@ -82,7 +82,7 @@ export function rolloverReason(/** @type {State} */ s, /** @type {number} */ now
 }
 
 export const rolloverSteps = (/** @type {Config} */ c) =>
-  `At the next safe point (the current step checked, not mid-edit): commit the verified work, write the handoff, add a log line, then start a new session whose first prompt says to read the handoff and resume, with the same mode and bounds. Without a tool that starts sessions, tell the owner to open one with that prompt and run \`${c.cmd} mark rollover\`. Then stop working in this one: one session at a time. This is required; don't start another increment first.`;
+  `At the next safe point (the current step checked, not mid-edit): commit the verified work, write the handoff (with where the review build is), add a log line, then start a new session whose first prompt says to read the handoff and resume, with the same mode and bounds. Without a tool that starts sessions, tell the owner to open one with that prompt and run \`${c.cmd} mark rollover\`. Then stop working in this one: one session at a time. This is required; don't start another increment first.`;
 
 /**
  * One hook event: the new state and what to say back. Pure, for tests.
@@ -161,13 +161,19 @@ function load(/** @type {string} */ file) {
   }
 }
 
+/** Whether two folders are the same; on Windows, paths are case-insensitive (a hook may report `c:\x` for `C:\x`). */
+export function samePath(/** @type {string} */ a, /** @type {string} */ b, platform = process.platform) {
+  if (platform === 'win32') return win32.resolve(a || '.').toLowerCase() === win32.resolve(b || '.').toLowerCase();
+  return resolve(a || '.') === resolve(b || '.');
+}
+
 /** The latest session seen in this folder (one session at a time per project). */
 export function latest(/** @type {string} */ dir, /** @type {string} */ cwd) {
   if (!existsSync(dir)) return null;
   let best = /** @type {{ file: string, state: State } | null} */ (null);
   for (const f of readdirSync(dir).filter((x) => x.endsWith('.json'))) {
     const state = load(join(dir, f));
-    if (state && resolve(state.cwd || '.') === resolve(cwd) && (!best || state.seen > best.state.seen)) best = { file: join(dir, f), state };
+    if (state && samePath(state.cwd, cwd) && (!best || state.seen > best.state.seen)) best = { file: join(dir, f), state };
   }
   return best;
 }

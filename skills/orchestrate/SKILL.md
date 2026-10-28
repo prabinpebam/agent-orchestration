@@ -30,17 +30,19 @@ How an agent carries out work: which mode, which checks, how progress is recorde
    Say the mode in one line before starting ("Mode: show me the UX sooner, work with me"). The owner can change it with a word.
 3. **Bounds.** Unattended work always has explicit bounds: time, scope, what never to touch, whether the agent may merge, push or deploy, and what to escalate. Use the owner's; propose them when there are none, and never assume publishing is allowed.
 4. **Clock (required).** Before the first increment, confirm the session clock is running: its "Session clock on" notice is in the session's context, or `node .github/hooks/orchestration-clock.mjs status` shows this session. If it isn't, follow "The clock" below before doing any other work. Add "clock on" (or "clock by hand", for a tool without hooks) to the mode line.
+5. **Review build.** Before the first increment, make sure the owner's review build is running (below): start it from the last validated commit if it isn't, check that it answers, and say where it is in the first status line. The project fact says how to start and refresh it; when there's none, set one up and propose the fact.
 
 ## The loop
 
 ```
-plan the next increment → act → check (the smallest check that covers it) → record → review about every 30 minutes → adapt
+plan the next increment → act → check (the smallest check that covers it) → record → refresh the review build → review about every 30 minutes → adapt
                                                                     → roll over to a new session at the session limit
 ```
 
 - **Plan:** the next increment is the smallest piece that produces something usable or something learned. Write it in the work plan (`templates/work-plan.md` of this harness) with how it will be checked.
 - **Act and check:** `stage-validation` says which checks fit the stage and the change.
 - **Record:** a progress log line per meaningful step, and the evidence beside what it proves (`coordinate`).
+- **Refresh:** when an increment is validated and committed, or a stage closes, bring the review build up to that commit (`stage-validation`), unless the owner is using it.
 - **Review:** about every 30 minutes of running work, ask whether this is still the fastest path to validated progress (`progress-review`).
 - **Adapt:** keep course, adjust, or change course: switch mode, cut scope, try another approach, or park the item and take the next most valuable one.
 - **Roll over:** a long session gets slow and forgetful, for the agent and for the editor showing it. At the session limit (by default 90 minutes, 300 tool calls or 2 context compactions, whichever comes first), hand over to a new session at the next safe point (`coordinate`).
@@ -59,12 +61,25 @@ What's mandatory:
 - **Without hooks, be the clock by hand.** At every progress log line, compare the time with the last review line and with the session's first line, count the compactions you've seen, and act as soon as any limit is reached. Same limits, same obligations.
 - **A skipped or late review or roll-over is a finding.** The next review reports it (`progress-review`, question 9).
 
+## The review build: always ready to try
+
+The owner reviews when they choose, not when the agent stops. So a **review build** is always built, running and ready: a local site, or a stable build of the app, that they can open at any moment to try the work, give early input and change course. It's isolated from development, so trying it never disturbs the work and the work never breaks it.
+
+- **Validated commits only.** It shows the last commit whose checks passed. Never the working copy, never uncommitted or failing work, never the dev server with hot reload.
+- **Isolated.** Its own checkout (for example a separate git worktree, detached at the validated commit), its own build output, its own port or user-data folder, and its own demo or temporary data. Never the files being edited, never the owner's real data, accounts or remotes.
+- **Always running.** Start it at the start of work and keep it running across increments and sessions. Check that it answers (the page loads, the process is alive and shows its window or responds) after every start and refresh.
+- **Refreshed at each validated increment or stage close,** without taking the owner's focus: build in the review checkout, and swap only when it's ready. If the owner may be using it, don't restart it without their agreement: ask in one line, or start the new one beside it (another port or data folder) and say so.
+- **Named everywhere.** Every status report and handoff says where it is, which commit it shows, and how to open and refresh it (`coordinate`).
+
+Without a tool that can keep a process running, build the review checkout and give the owner the one command that starts it; without git worktrees, use a second clone or a copy of the build output at the validated commit.
+
 ## Which skill, when
 
 | You're about to… | Load |
 |---|---|
 | Choose or switch a mode; decide what to produce first and what to defer | `execution-modes` |
 | Decide which checks to run or what evidence a stage needs; run a build-check-fix loop; merge | `stage-validation` |
+| Refresh the review build after a validated increment or a stage close | `stage-validation` |
 | Pause after about 30 minutes of work, finish an interval, or notice progress stalling | `progress-review` |
 | Keep the progress log, report status, delegate, get an independent review, hand over, or roll over to a new session | `coordinate` |
 
@@ -80,6 +95,7 @@ What's mandatory:
 8. **Escalate the irreversible.** Anything destructive, public, costly or outside the bounds waits for the owner, with the options laid out, while other work continues.
 9. **Short sessions.** Hand over to a new session at the session limit rather than letting one run until it slows down; the records carry the work across, so nothing is lost.
 10. **The clock is mandatory.** Every session runs with the session clock, or keeps time by hand where the tool has no hooks. Act on every reminder, and never weaken the clock to keep working.
+11. **The owner can always try it.** A review build at the last validated commit is running and isolated from development, and every report says where it is.
 
 ## When tools differ
 
@@ -91,7 +107,8 @@ Coding agents and editors don't offer the same capabilities, and none is complet
 | A clock or timer | Read the time at each step boundary (the shell's date command) and from the log's timestamps |
 | Hooks (the session clock) | Still required: keep time by hand. At every log line, compare the time with the last review and the session's start, and act on any limit that's been reached |
 | Starting a new session | Write the handoff, give the owner the one line to start the next session with, and stop |
-| Background commands | Run long checks at the end of an interval, not in the middle of an edit |
+| Background commands | Run long checks at the end of an interval, not in the middle of an edit; build the review build and give the owner the one command that starts it |
+| Git worktrees | Keep the review build in a second clone, or a copy of the build output, at the validated commit |
 | Memory between sessions | The work plan, the progress log and the handoff are the memory; read them first |
 | Writing outside the workspace | Keep the progress log in an ignored folder inside it (`.agent-orchestration/`, listed in `.gitignore`), and record that path as the project fact |
 | Permission to push or deploy | Stop at "validated and ready", and put the exact owner action in the handoff |
@@ -99,4 +116,4 @@ Coding agents and editors don't offer the same capabilities, and none is complet
 
 ## Project facts
 
-The installer adds an **Orchestration** section to the project's `AGENTS.md` with the facts these skills read: where product intent lives, the commands for each validation tier, the progress log's path, the work plan, branch and merge rules and what the agent may merge, push or deploy, what must never break, the review interval and the session limits. Each is optional; a skill proposes one when it's missing.
+The installer adds an **Orchestration** section to the project's `AGENTS.md` with the facts these skills read: where product intent lives, the commands for each validation tier, the progress log's path, the work plan, branch and merge rules and what the agent may merge, push or deploy, what must never break, the review build (how to start and refresh it, and where it is), the review interval and the session limits. Each is optional; a skill proposes one when it's missing.

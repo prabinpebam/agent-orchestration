@@ -10,9 +10,9 @@ It decides **how** to do the work, not **what** is worth building. It reads prod
 
 | Skill | Use it when | What it gives you |
 |---|---|---|
-| [`orchestrate`](skills/orchestrate/SKILL.md) | Starting any multi-step task; the owner is away | The measure, the intent-mode-bounds start, the plan-act-check-record-review loop, the session clock, rules that hold everywhere, fallbacks for tools that lack a capability |
+| [`orchestrate`](skills/orchestrate/SKILL.md) | Starting any multi-step task; the owner is away | The measure, the intent-mode-bounds start, the plan-act-check-record-review loop, the session clock, the review build, rules that hold everywhere, fallbacks for tools that lack a capability |
 | [`execution-modes`](skills/execution-modes/SKILL.md) | Choosing or switching how to run the work | Three goal modes and two attention modes: what each produces first, defers, proves, and when it ends |
-| [`stage-validation`](skills/stage-validation/SKILL.md) | Deciding which checks to run or what evidence a stage needs | Evidence by goal mode, validation tiers 0–3, the build-check-fix loop, blocked items, found on the way, ready to show, merging exactly what was tested |
+| [`stage-validation`](skills/stage-validation/SKILL.md) | Deciding which checks to run or what evidence a stage needs | Evidence by goal mode, validation tiers 0–3, the build-check-fix loop, refreshing the review build, blocked items, found on the way, ready to show, merging exactly what was tested |
 | [`progress-review`](skills/progress-review/SKILL.md) | About every 30 minutes; at the end of an interval; when progress stalls | Nine questions (the last on the session's cost), stall signals, and how to change course |
 | [`coordinate`](skills/coordinate/SKILL.md) | Logging, reporting, delegating, reviewing, handing over, rolling over to a new session | The work plan, progress log and handoff; status and reports; bounded delegation; independent review before risky merges; when and how to roll over |
 
@@ -24,7 +24,7 @@ It decides **how** to do the work, not **what** is worth building. It reads prod
 |---|---|
 | [`work-plan.md`](templates/work-plan.md) | Intent (or three lines when there's no spec), mode and bounds, increments with their checks, working defaults, shortcuts, status |
 | [`progress-log.md`](templates/progress-log.md) | The log line, tagged by mode |
-| [`handoff.md`](templates/handoff.md) | The end-of-stretch handoff, including changes to the product intent |
+| [`handoff.md`](templates/handoff.md) | The end-of-stretch handoff, including where the review build is and changes to the product intent |
 
 | Tool (Node 20+, no dependencies) | |
 |---|---|
@@ -47,6 +47,19 @@ For GitHub Copilot (VS Code, the CLI and the app share the hook format) the inst
 | `agentStop` | With a roll-over due, asks for one more turn to do it (once) |
 
 Limits live in the hook configuration's `env`: `AO_REVIEW_MIN` (30), `AO_ROLLOVER_MIN` (90), `AO_ROLLOVER_TOOLS` (300), `AO_ROLLOVER_COMPACTIONS` (2); 0 turns one off. A review counts when the agent runs the `throughput-reviewer` agent, loads the `progress-review` skill or runs `mark review`; a roll-over counts when it starts a new session with a session tool, or runs `mark rollover` after asking the owner to open one. `node .github/hooks/orchestration-clock.mjs status` shows the clock. State is one small file per session in the system's temporary folder (or `AO_CLOCK_DIR`), never in the project; tool arguments are read only to recognise those commands. A broken clock prints `{}` and never stops work. For other tools, `orchestrate` gives the fallback, which is just as binding: compare the time with the last review and the session's start at every log line.
+
+## The review build
+
+The owner reviews when they choose, not when the agent stops. So a **review build** is always built, running and ready to try: a local site or a stable build of the app, at the **last validated commit**, isolated from development so the owner can give early input and change course without disturbing the work, and without the work breaking what they're looking at.
+
+| | |
+|---|---|
+| What it shows | Only commits whose checks passed. Never the working copy, uncommitted or failing work, or the dev server |
+| Where it lives | Its own checkout (for example a git worktree detached at the validated commit), its own build output, its own port or user-data folder, demo or temporary data; never the owner's real data, accounts or remotes |
+| When it moves | At each validated increment and each stage close: build in the review checkout, swap only when it's ready, check it answers. Never restarted while the owner may be using it without their agreement, and never takes their focus |
+| Where it's named | Every status report and handoff: where it is, the commit it shows, how to open and refresh it |
+
+`orchestrate` starts it (start step 5) and keeps it in the loop, `stage-validation` says when and how to refresh it, and `coordinate` puts it in reports and handoffs. Its project fact, **Review build**, says how to start and refresh it and where it is.
 
 ## Modes
 
@@ -72,7 +85,7 @@ git clone https://github.com/prabinpebam/agent-orchestration.git
 node agent-orchestration/tools/install.mjs path/to/your-project
 ```
 
-That copies the skills and the agent where each coding agent looks for them, installs the session clock's hooks for Copilot (an existing hook configuration is kept, with its limits), and adds an **Orchestration** section to the project's `AGENTS.md` (and `CLAUDE.md`, when there is one) with the project facts the skills read: where product intent lives, the work plan, the commands for each validation tier, the progress log, branch and merge rules (including whether the agent may merge, push or deploy), the review interval and the session limits. Fill those in. Run it again any time to update; your filled-in facts are kept, and other sections of `AGENTS.md` are left alone.
+That copies the skills and the agent where each coding agent looks for them, installs the session clock's hooks for Copilot (an existing hook configuration is kept, with its limits), and adds an **Orchestration** section to the project's `AGENTS.md` (and `CLAUDE.md`, when there is one) with the project facts the skills read: where product intent lives, the work plan, the commands for each validation tier, the progress log, branch and merge rules (including whether the agent may merge, push or deploy), the review build, the review interval and the session limits. Fill those in. Run it again any time to update; your filled-in facts are kept (a fact added to the harness since appears as its placeholder, to fill in), and other sections of `AGENTS.md` are left alone.
 
 Options:
 

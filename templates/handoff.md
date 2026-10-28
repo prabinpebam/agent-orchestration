@@ -8,6 +8,9 @@ Resume with: read this file, then <the work plan and the intent>; mode <goal · 
 ## Done (with evidence)
 - <what a person can do now> — <tests, runs, commits>
 
+## Review build
+- <where it is: the address, or the app and how to open it> — shows <commit>; refresh with <command>; isolated from development (<its checkout, port or data folder>)
+
 ## In progress
 - <what, how far, the branch>
 

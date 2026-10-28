@@ -1,6 +1,6 @@
 ---
 name: coordinate
-description: Use when keeping a progress log, reporting status, writing a handoff at the end of a work stretch, rolling over to a new session, delegating to sub-agents, or getting an independent review before a risky merge. Durable progress records, status tables, handoffs another session can resume from, bounded delegation, and reports that lead with what a person can do now.
+description: Use when keeping a progress log, reporting status, writing a handoff at the end of a work stretch, rolling over to a new session, delegating to sub-agents, or getting an independent review before a risky merge. Durable progress records, status tables, handoffs another session can resume from, bounded delegation, and reports that lead with what a person can do now and say where the review build is.
 ---
 
 # Coordinate: records, reviews, delegation and handoffs
@@ -30,11 +30,11 @@ Goal tags: `ux-sooner`, `prove-assumption`, `production-ready`. Attention tags: 
 
 ### Status
 
-The work plan ends with a status table, one row per increment: state (not started, in progress, done, blocked) and the evidence in a sentence or two: the commands run, the counts, the run IDs, what was skipped and why.
+The work plan ends with a status table, one row per increment: state (not started, in progress, done, blocked) and the evidence in a sentence or two: the commands run, the counts, the run IDs, what was skipped and why. Under it, one line for the review build: where it is and the commit it shows.
 
 ## Reporting
 
-Lead with what a person can do now that they couldn't before, then the evidence, then what's blocked and on whom, then what's next. Say what wasn't checked. Keep it short enough to read in a minute.
+Lead with what a person can do now that they couldn't before, then the evidence, then what's blocked and on whom, then what's next. Say what wasn't checked. Name the review build in every status report: where it is (the address, or the app and how to open it), which commit it shows, and whether it's current. Keep it short enough to read in a minute.
 
 ## Delegation
 
@@ -52,6 +52,7 @@ Before merging something risky (shared infrastructure, security, data, anything 
 End every unattended stretch with a handoff another person or agent can act on without asking anything:
 
 - **Done:** what a person can do now, with the evidence (tests, runs, commits).
+- **Review build:** where it is, the commit it shows, how to open it and how to refresh it, so the owner can try the work straight away and the next session keeps it running.
 - **In progress:** what, how far, which branch.
 - **Waiting on you:** each decision, account or credential, with the options, a recommendation, and the working default in use; and each merge, push or release that's ready but outside the agent's bounds, with the exact command and what to watch.
 - **Try first:** the one thing to open or run, and what they should see.
@@ -66,8 +67,8 @@ A session that runs for hours slows down (the editor holds the whole conversatio
 
 **How:**
 
-1. Commit the verified work, within the bounds. Work that isn't verified goes in the handoff as in progress, never committed as done.
-2. Write the handoff (`templates/handoff.md`), starting with the line to resume with.
+1. Commit the verified work, within the bounds. Work that isn't verified goes in the handoff as in progress, never committed as done. Refresh the review build to the last validated commit, and leave it running for the next session.
+2. Write the handoff (`templates/handoff.md`), starting with the line to resume with, and saying where the review build is.
 3. Add a log line: `rollover: <why>; handoff written; <commit>`.
 4. Start the new session with a short first prompt: read the handoff and resume, with the same mode and bounds, and roll over again at the next session limit. Where the tool can start a session, start it; otherwise give the owner that line to start it with, and with the session clock run its `mark rollover`.
 5. Stop working in the old session. One session at a time works in a project; two would edit the same files.

@@ -1,6 +1,6 @@
 ---
 name: stage-validation
-description: Use when deciding which checks to run, what evidence a stage or change needs, running a build-check-fix loop, merging, or deciding whether something is ready to show. Evidence matched to the goal mode, validation tiers scoped to the change, blocked items, found-on-the-way issues, and merging exactly what was tested.
+description: Use when deciding which checks to run, what evidence a stage or change needs, running a build-check-fix loop, merging, or deciding whether something is ready to show. Evidence matched to the goal mode, validation tiers scoped to the change, blocked items, found-on-the-way issues, merging exactly what was tested, and refreshing the owner's review build from validated commits only.
 ---
 
 # Stage validation: the right checks at the right time
@@ -44,6 +44,17 @@ For each increment:
 4. **Review** independently before merging something risky (`coordinate`).
 5. **Record** the evidence beside each line it proves: which test, how many passed, which run.
 6. **Merge** what's proven, as far as the bounds allow, and hand over with its Try it.
+7. **Refresh the review build** to the validated commit (below).
+
+## The review build
+
+The owner's always-running build for trying the work (`orchestrate`). It moves forward only on evidence:
+
+- **When:** after an increment's checks pass and it's committed, and at every stage close. Never from the working copy, uncommitted changes, or a commit whose checks failed or didn't run. A refresh never waits for a full suite the change didn't need; it waits for the checks the change did need.
+- **How:** in its own checkout (for example `git worktree add --detach <folder> <commit>` once, then `git checkout --detach <commit>` there), install and build, then start it with its own port or user-data folder and demo or temporary data. Build first and swap last, so a broken build never replaces a working one.
+- **Check it answers:** the page loads, or the app's process is alive and its window or a health check responds. A refresh that doesn't answer is reverted to the previous commit and recorded as found on the way.
+- **Don't take the owner's focus:** start it in the background, without bringing a window to the front where the tool can avoid it. If the owner may be using it, ask before restarting it, or start the new one beside it and say where.
+- **Record it:** a log line with the commit it now shows (`review build: <commit>, answers at <where>`), and the same in the next status report and handoff.
 
 ### Blocked
 
@@ -55,7 +66,7 @@ Bugs and gaps found while building go in the work plan under "Found on the way":
 
 ## Ready to show
 
-Before showing the owner anything visual, check the basics for what's being shown, so they never have to point them out:
+Before showing the owner anything visual, check the basics for what's being shown, so they never have to point them out. What they're shown is the review build, at a validated commit:
 
 - **Show me the UX sooner:** the flow is reachable, the words are real, nothing is broken or blank, and it works at the size they'll view it.
 - **Make this production-ready:** the component's whole anatomy, in light and dark, at rest, hover, active, focus and disabled (plus error, empty and loading where they exist), on a small screen and with the keyboard, with one enlarged capture looked at. Add a test so the same flaw can't come back.

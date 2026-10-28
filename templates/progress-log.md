@@ -9,6 +9,7 @@ goal: ux-sooner | prove-assumption | production-ready   attention: with-me | una
 2026-01-31 13:40 [ux-sooner · with-me] I1 setup flow: clickable on fixtures; screenshots looked at; owner trying it
 2026-01-31 14:05 [production-ready · unattended] I3 (3.2) setup flow: builds; unit 42 pass, e2e "first run" 3/3; merging
 2026-01-31 14:20 [production-ready · unattended] I3: merged a1b2c3d, deploy green; starting I4 (3.4)
+2026-01-31 14:22 [production-ready · unattended] review build: a1b2c3d, answers at its own port; owner can try I3
 2026-01-31 14:35 [production-ready · unattended] review: adjust; full suite queued twice for copy fixes, back to tier 1
 ```
 

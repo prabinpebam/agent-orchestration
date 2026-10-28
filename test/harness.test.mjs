@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defaultKinds, plan, section, withSection } from '../tools/install.mjs';
+import { defaultKinds, mergeFacts, plan, section, withSection } from '../tools/install.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const walk = (d) => readdirSync(d).flatMap((n) => (n === '.git' || n === 'node_modules' ? [] : statSync(join(d, n)).isDirectory() ? walk(join(d, n)) : [join(d, n)]));
@@ -82,6 +82,43 @@ test('relative links in the markdown resolve', () => {
       assert.ok(existsSync(resolve(dirname(f), target)), `${relative(ROOT, f)} → ${target}`);
     }
   }
+});
+
+test('the review build is required everywhere it applies: validated commits only, isolated, kept running, named in reports and handoffs', () => {
+  const texts = {
+    orchestrate: read('skills', 'orchestrate', 'SKILL.md'),
+    'stage-validation': read('skills', 'stage-validation', 'SKILL.md'),
+    coordinate: read('skills', 'coordinate', 'SKILL.md'),
+    section: section(null),
+    'handoff template': read('templates', 'handoff.md'),
+    'work-plan template': read('templates', 'work-plan.md'),
+    README: read('README.md'),
+  };
+  for (const [name, text] of Object.entries(texts)) assert.match(text, /review build/i, `${name} names the review build`);
+  for (const name of ['orchestrate', 'stage-validation', 'section', 'README']) assert.match(texts[name], /validated commit/i, `${name}: only validated commits`);
+  for (const name of ['orchestrate', 'section', 'README']) assert.match(texts[name], /isolated/i, `${name}: isolated from development`);
+  assert.match(texts.orchestrate, /Review build\.\*\* Before the first increment/, 'orchestrate starts it');
+  assert.match(texts.orchestrate, /→ refresh the review build →/, 'the loop refreshes it');
+  assert.match(texts['stage-validation'], /## The review build/);
+  assert.match(texts.coordinate, /Name the review build in every status report/);
+  assert.match(texts.coordinate, /\*\*Review build:\*\* where it is/, 'the handoff names it');
+  assert.match(texts['handoff template'], /## Review build/);
+  assert.match(section(null), /- \*\*Review build:\*\* <how to start and refresh it/, 'the installed facts ask for it');
+});
+
+test('a re-run adds a fact the harness gained since to filled-in facts, keeping every filled-in value', () => {
+  const old = '# P\n\n<!-- agent-orchestration:start -->\n## Orchestration (old wording)\n\n### Project facts (fill in; the skills read these)\n\n- **Product intent:** docs/spec.md\n- **Progress log:** ~/logs/p.log\n- **Reviews and escalation:** review every 20 minutes\n<!-- agent-orchestration:end -->\n';
+  const once = withSection(old);
+  assert.match(once, /- \*\*Product intent:\*\* docs\/spec\.md/);
+  assert.match(once, /- \*\*Progress log:\*\* ~\/logs\/p\.log/);
+  assert.match(once, /- \*\*Review build:\*\* <how to start/);
+  assert.ok(once.indexOf('**Review build:**') < once.indexOf('**Reviews and escalation:** review every 20 minutes'), 'added before the last fact');
+  assert.equal((once.match(/\*\*Review build:\*\*/g) ?? []).length, 1);
+  const filled = once.replace(/- \*\*Review build:\*\* <[^\n]*/, '- **Review build:** a worktree at the last validated commit, port 4000');
+  const again = withSection(filled);
+  assert.match(again, /- \*\*Review build:\*\* a worktree at the last validated commit, port 4000/);
+  assert.equal(withSection(again), again, 'a third run changes nothing');
+  assert.equal(mergeFacts(null, '- **A:** <a>'), '- **A:** <a>');
 });
 
 test('the installer copies skills and agents where each agent looks, for a project and for every project', () => {
