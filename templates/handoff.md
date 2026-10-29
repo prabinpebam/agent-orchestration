@@ -3,7 +3,19 @@
 Written at the end of every unattended stretch or session, and at every roll-over to a new session, so the owner (or the next agent) can act without asking anything.
 
 ```
-Resume with: read this file, then <the work plan and the intent>; mode <goal · attention>; bounds <…>; roll over again at the next session limit.
+Resume with: read this file, then <the registry/queue, unread messages, live workers, work plan and intent>; role <coordinator | worker>; mode <goal · attention>; bounds <…>; roll over again at the next session limit.
+
+## Ownership and queue
+- Registry/queue: <authoritative session-store location or ignored file accessible to the successor>
+- Coordinator: <current ID>; successor: <exactly one ID, or not yet created>; ownership transfer: <pending | complete>
+- Unread messages and completion records: <where to read them; completion route>
+- Clock: <session ID; last review; elapsed minutes, calls and compactions; unchanged limits>
+
+| Task | Owner worker | Working copy | State | Trigger | Completion signal |
+|---|---|---|---|---|---|
+| <ID and objective> | <worker and continuation IDs> | <absolute path and branch> | <current state> | <exact prerequisite or ready> | <route or record; task/attempt ID and evidence> |
+
+Reconcile this snapshot with live state before dispatching. Adopt running workers; do not recreate them. One writer per working copy. Check pending messages and the live worker list before any continuation. The coordinator transfers its registry without waiting for workers; their clocks keep running. End the old coordinator turn, and explicitly mark its roll-over after transfer.
 
 ## Done (with evidence)
 - <what a person can do now> — <tests, runs, commits>

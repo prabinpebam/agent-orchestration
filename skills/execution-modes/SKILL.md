@@ -7,6 +7,10 @@ description: Use when choosing, switching or explaining how to run a piece of wo
 
 A mode is a **goal** plus an **attention** level. The goal says what kind of result comes next; the attention says how the owner is involved. "Show me the UX sooner, keep going unattended" is a mode; so is "make this production-ready, work with me".
 
+## Roles in every mode
+
+The main chat stays a **free coordinator** (`orchestrate`, `coordinate`). It reads live state, routes each prompt, queues dependencies, steers workers and ends its turn. Workers implement and run checks. Neither attention mode permits coordinator implementation, long commands, sleeps, polling loops or blocking waits. The intervals below bound worker execution, not coordinator turn length; both roles keep the same session clock limits.
+
 ## Goal modes
 
 ### Show me the UX sooner
@@ -40,7 +44,7 @@ Bring validated work up to the project's quality bar: correct, tested, accessibl
 
 ### Choosing and switching
 
-- One goal at a time. When a request mixes them ("show me, and make it solid"), do them in order: show, then harden.
+- One goal per task at a time. When a request mixes them ("show me, and make it solid"), do them in order: show, then harden. Independent workers may have different goals.
 - Don't harden what isn't validated: no production work on a concept the owner hasn't seen, unless they ask for it.
 - Don't build on an unproven belief that could sink the plan; prove it first.
 - Recheck the goal at every progress review. Switch when its end condition is met, or when evidence says another goal is worth more now. Log the switch and why.
@@ -55,7 +59,7 @@ The owner is collaborating: trying things, giving feedback, deciding.
 - Before showing each increment, only the fast checks, 5 minutes or less: the unit tests the change touches and the one end-to-end test that covers it. No full suite or benchmark between the owner and the next thing they'll see.
 - Tier-3 triggers (`stage-validation`) still hold: when the change touches a release, dependencies, shared infrastructure, or the production or security path, run those broad checks before it's merged or released, in the background while the owner reviews when the tool allows, otherwise at the end of the session.
 - Ship where they'll see it, and say exactly what to reopen or reload.
-- Queue new feedback rather than widening the running change. Ask only what can't be decided; offer choices with a recommendation first.
+- Triage new feedback against live state (`coordinate`): steer the current writer or queue its follow-up; start independent work in an isolated copy; queue dependencies with triggers; steer or stop for corrections. Ask only what can't be decided; offer choices with a recommendation first.
 
 ### Keep going unattended
 

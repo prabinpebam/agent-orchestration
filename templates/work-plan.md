@@ -35,7 +35,20 @@ IDs: product IDs (P1, U1, A1, O1, PD1, 1.1) are cited only when the product inte
 | May merge, push, deploy | <which of them the agent may do; the rest are the owner's actions, named in the handoff> |
 | Escalate when | <a credential, a decision with lasting consequences, anything irreversible, public or costly> |
 | Review interval | <30 minutes unless a project fact says otherwise> |
+| Session limits | <90 minutes, 300 tool calls or 2 compactions, whichever comes first; coordinator and workers each keep their clock> |
+| Coordinator | <main chat ID; routing and records only, short turns, no implementation or blocking waits> |
+| Registry/queue | <authoritative session-store location or ignored file; readable by a successor> |
 | Review build | <where the owner tries the work: its own checkout at the last validated commit, its port or data folder, how to refresh it> |
+
+### Live ownership and queue
+
+Keep the live registry at the location above, not in a second competing copy of this plan. Use these fields there:
+
+| Task | Owner worker | Working copy | State | Trigger | Completion signal |
+|---|---|---|---|---|---|
+| <ID and objective> | <worker ID; predecessor/successor> | <absolute path and branch> | <queued, launching, running, stopping, blocked, done> | <exact prerequisite or ready> | <message route or record path; task/attempt ID and evidence> |
+
+At every coordinator turn, read unread messages, completion records, the live worker list and this queue before dispatch. One writer per working copy. Record launches before dispatch; check for an existing worker or successor before creating one. Report by event, never by a blocking completion-file poll.
 
 ## 3. Increments
 

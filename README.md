@@ -2,6 +2,8 @@
 
 A project-agnostic harness for **how AI coding agents carry out work**: choosing an execution mode, running bounded loops with the owner present or away, checking at the depth each stage needs, reviewing progress about every 30 minutes, and changing course when progress stalls. Success is measured in useful, validated outcomes per unit of time, not in checklists completed or foundations laid early.
 
+The main chat stays a **free coordinator**: it reads new prompts and live worker state, routes and queues work, steers or stops workers, checks deliveries cheaply and reports in short turns. Workers implement and run builds, tests and long commands. No coordinator sleeps, polls, blocking waits or watchers that keep a turn busy.
+
 It's a set of **skills** (instructions an agent loads when they apply), one **agent** (a reviewer), **templates** and an installer with no dependencies. It works with GitHub Copilot (VS Code and CLI), Claude Code, Codex, and any agent that reads `AGENTS.md` or skill folders, without assuming they all offer the same capabilities.
 
 It decides **how** to do the work, not **what** is worth building. It reads product intent when a project has some (for example, from [agentic-craft](https://github.com/prabinpebam/agentic-craft)), and stays useful for code tasks that have no formal spec.
@@ -10,11 +12,11 @@ It decides **how** to do the work, not **what** is worth building. It reads prod
 
 | Skill | Use it when | What it gives you |
 |---|---|---|
-| [`orchestrate`](skills/orchestrate/SKILL.md) | Starting any multi-step task; the owner is away | The measure, the intent-mode-bounds start, the plan-act-check-record-review loop, the session clock, the review build, rules that hold everywhere, fallbacks for tools that lack a capability |
+| [`orchestrate`](skills/orchestrate/SKILL.md) | Starting multi-step work; triaging prompts; the owner is away | The free coordinator and worker roles, intent-mode-bounds start, execution loop, session clock, review build and tool-portability fallbacks |
 | [`execution-modes`](skills/execution-modes/SKILL.md) | Choosing or switching how to run the work | Three goal modes and two attention modes: what each produces first, defers, proves, and when it ends |
 | [`stage-validation`](skills/stage-validation/SKILL.md) | Deciding which checks to run or what evidence a stage needs | Evidence by goal mode, validation tiers 0–3, the build-check-fix loop, refreshing the review build, blocked items, found on the way, ready to show, merging exactly what was tested |
 | [`progress-review`](skills/progress-review/SKILL.md) | About every 30 minutes; at the end of an interval; when progress stalls | Nine questions (the last on the session's cost), stall signals, and how to change course |
-| [`coordinate`](skills/coordinate/SKILL.md) | Logging, reporting, delegating, reviewing, handing over, rolling over to a new session | The work plan, progress log and handoff; status and reports; bounded delegation; independent review before risky merges; when and how to roll over |
+| [`coordinate`](skills/coordinate/SKILL.md) | Triaging prompts, queuing, delegating, logging, reporting, reviewing and handing over | The durable registry/queue, event-driven completion, duplicate prevention, records, bounded workers and single-successor roll-overs |
 
 | Agent | Job |
 |---|---|
@@ -22,9 +24,9 @@ It decides **how** to do the work, not **what** is worth building. It reads prod
 
 | Template | |
 |---|---|
-| [`work-plan.md`](templates/work-plan.md) | Intent (or three lines when there's no spec), mode and bounds, increments with their checks, working defaults, shortcuts, status |
+| [`work-plan.md`](templates/work-plan.md) | Intent, mode and bounds, coordinator and registry/queue location, ownership fields, increments with checks, working defaults, shortcuts, status |
 | [`progress-log.md`](templates/progress-log.md) | The log line, tagged by mode |
-| [`handoff.md`](templates/handoff.md) | The end-of-stretch handoff, including where the review build is and changes to the product intent |
+| [`handoff.md`](templates/handoff.md) | The end-of-stretch handoff, including registry/queue, live workers, successor, review build and changes to intent |
 
 | Tool (Node 20+, no dependencies) | |
 |---|---|
@@ -46,7 +48,15 @@ For GitHub Copilot (VS Code, the CLI and the app share the hook format) the inst
 | `preCompact` | Counts the compaction |
 | `agentStop` | With a roll-over due, asks for one more turn to do it (once) |
 
-Limits live in the hook configuration's `env`: `AO_REVIEW_MIN` (30), `AO_ROLLOVER_MIN` (90), `AO_ROLLOVER_TOOLS` (300), `AO_ROLLOVER_COMPACTIONS` (2); 0 turns one off. A review counts when the agent runs the `throughput-reviewer` agent, loads the `progress-review` skill or runs `mark review`; a roll-over counts when it starts a new session with a session tool, or runs `mark rollover` after asking the owner to open one. `node .github/hooks/orchestration-clock.mjs status` shows the clock. State is one small file per session in the system's temporary folder (or `AO_CLOCK_DIR`), never in the project; tool arguments are read only to recognise those commands. A broken clock prints `{}` and never stops work. For other tools, `orchestrate` gives the fallback, which is just as binding: compare the time with the last review and the session's start at every log line.
+Limits live in the hook configuration's `env`: `AO_REVIEW_MIN` (30), `AO_ROLLOVER_MIN` (90), `AO_ROLLOVER_TOOLS` (300), `AO_ROLLOVER_COMPACTIONS` (2); 0 turns one off. A review counts when the agent runs the `throughput-reviewer` agent, loads the `progress-review` skill or runs `mark review`. A roll-over counts only on explicit `mark rollover` after ownership transfers to the recorded successor, or after giving the owner the prompt to open one. **Creating a worker session is not a roll-over.** A coordinator transfers its registry to one fresh coordinator without waiting for or restarting workers; every role keeps the same limits.
+
+`node .github/hooks/orchestration-clock.mjs status` shows the clock when the folder has one session. With multiple clocks, use `status --session <id>` or `mark review|rollover --session <id>`; an ambiguous command refuses to choose another session's clock. State is one small file per session in the system's temporary folder (or `AO_CLOCK_DIR`), never in the project; tool arguments are read only to recognise those commands. A broken hook prints `{}` and never stops work. For other tools, `orchestrate` gives the fallback, which is just as binding: compare the time with the last review and the session's start at every log line.
+
+## The coordinator and queue
+
+At the start of every coordinator turn, read unread messages and completion records, the live worker list and the registry/queue. Triage every new prompt: same writer's area, steer it or queue its follow-up; independent work, launch an isolated worker; dependent work, queue with an explicit trigger; correction, steer or stop. **One writer per working copy, always**; a separate branch in a shared folder is not isolation.
+
+Keep a durable registry in the session's own store or an ignored file: **task, owner worker, working copy, state, trigger, completion signal**, plus coordinator/successor IDs. Workers report by message, completion record or both. The coordinator checks evidence and updates the queue at turn boundaries, never in a waiting loop. Before any worker or continuation is created, check pending messages and live workers for an existing owner or successor. Record uncertain launches and reconcile them rather than retrying.
 
 ## The review build
 
@@ -85,7 +95,7 @@ git clone https://github.com/prabinpebam/agent-orchestration.git
 node agent-orchestration/tools/install.mjs path/to/your-project
 ```
 
-That copies the skills and the agent where each coding agent looks for them, installs the session clock's hooks for Copilot (an existing hook configuration is kept, with its limits), and adds an **Orchestration** section to the project's `AGENTS.md` (and `CLAUDE.md`, when there is one) with the project facts the skills read: where product intent lives, the work plan, the commands for each validation tier, the progress log, branch and merge rules (including whether the agent may merge, push or deploy), the review build, the review interval and the session limits. Fill those in. Run it again any time to update; your filled-in facts are kept (a fact added to the harness since appears as its placeholder, to fill in), and other sections of `AGENTS.md` are left alone.
+That copies the skills and the agent where each coding agent looks for them, installs the session clock's hooks for Copilot (an existing hook configuration is kept, with its limits), and adds an **Orchestration** section to the project's `AGENTS.md` (and `CLAUDE.md`, when there is one) with the project facts the skills read: where product intent lives, the work plan, the commands for each validation tier, the progress log, the coordinator registry/queue and completion signals, branch and merge rules (including whether the agent may merge, push or deploy), the review build, the review interval and the session limits. Fill those in. Run it again any time to update; your filled-in facts are kept (a fact added to the harness since appears as its placeholder, to fill in), and other sections of `AGENTS.md` are left alone.
 
 Options:
 
@@ -106,7 +116,19 @@ Without `--for`, it installs for Copilot, plus Claude Code when the project has 
 | Claude Code | `.claude/skills/` (global `~/.claude/skills/`) | `.claude/agents/throughput-reviewer.md` | `CLAUDE.md` or `AGENTS.md` | No session clock installed: the agent checks the time at each log line |
 | Codex and other agents using the open skills layout | `.agents/skills/` (global `~/.agents/skills/`) | Not installed | `AGENTS.md` | The `progress-review` skill carries the reviewer's questions for an inline review; no session clock |
 
-Capabilities differ between tools and versions, so the skills never assume sub-agents, timers, hooks, background commands or memory between sessions. `orchestrate` lists the fallback for each: an inline review pass, reading the time at step boundaries and log lines, running long checks at interval ends, and treating the work plan, log and handoff as the memory.
+### Tool portability
+
+This was learned in **VS Code agent sessions**: a chat running a tool did not read queued prompts or sub-chat messages until its turn ended, and hooks fired between turns. Long completion-file polls hid a successor's message and caused a duplicate writer. Other tools may behave differently; preserve availability and ownership rather than hard-coding that mechanism.
+
+Check each tool or IDE:
+
+- Can it run parallel conversations or agents?
+- How do messages reach a busy conversation?
+- Does it notify on completion?
+- Where can the registry persist?
+- What happens to input arriving mid-turn?
+
+Without messaging, workers write completion records and the coordinator checks them at the start of each turn. In a **single-threaded tool**, keep turns short, keep the queue in a file, check status first and ask the owner to re-prompt. Explicitly separate a bounded worker turn when necessary; long checks go to an external worker or the owner, not a blocking coordinator turn. Don't promise concurrent input handling or automatic wake-up when unavailable. `orchestrate` gives the remaining fallbacks for clocks, hooks, review builds and session memory.
 
 ## Use
 

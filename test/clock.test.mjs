@@ -1,12 +1,12 @@
 // The session clock: node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULTS, config, hook, latest, recognise, rolloverReason, samePath, step } from '../tools/clock.mjs';
+import { DEFAULTS, config, hook, findSession, recognise, rolloverReason, samePath, step } from '../tools/clock.mjs';
 import { clockHooks, CLOCK, CLOCK_HOOKS } from '../tools/install.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -62,8 +62,8 @@ test('a progress review is asked for after the interval, not before, and again e
   assert.equal(said(out[6]), '');
 });
 
-test('running the throughput reviewer, loading the progress-review skill or the mark command counts as the review', () => {
-  for (const done of [tool(31, 'task', { agent_type: 'throughput-reviewer', prompt: '…' }), tool(31, 'skill', { skill: 'progress-review' }), tool(31, 'powershell', { command: 'node .github/hooks/orchestration-clock.mjs mark review' })]) {
+test('running the throughput reviewer or loading the progress-review skill counts as the review', () => {
+  for (const done of [tool(31, 'task', { agent_type: 'throughput-reviewer', prompt: '…' }), tool(31, 'skill', { skill: 'progress-review' })]) {
     const out = run([[0, 'sessionStart'], tool(30), done, tool(40), tool(61)]);
     assert.match(said(out[1]), /review due/);
     assert.equal(said(out[3]), '', `${done[1].toolName}: no reminder 9 minutes after the review`);
@@ -71,7 +71,9 @@ test('running the throughput reviewer, loading the progress-review skill or the 
   }
   assert.equal(recognise('task', { agent_type: 'explore' }), null);
   assert.equal(recognise('skill', { skill: 'coordinate' }), null);
-  assert.equal(recognise('powershell', JSON.stringify({ command: 'node "C:/x/orchestration-clock.mjs" mark review' })), 'review', 'escaped quotes');
+  for (const command of ['mark review', 'mark rollover']) {
+    assert.equal(recognise('powershell', { command: `node orchestration-clock.mjs ${command}` }), null, 'the CLI updates only its selected clock on success, never inferred from tool arguments');
+  }
 });
 
 test('a roll-over is asked for after the time limit, the tool-call limit or the compaction limit', () => {
@@ -89,14 +91,23 @@ test('a roll-over is asked for after the time limit, the tool-call limit or the 
   assert.match(said(out[6]), /due for 5 minutes/);
 });
 
-test('starting a new session hands over: the reminders stop, and a later tool call is told the work moved', () => {
-  const out = run([[0, 'sessionStart'], tool(91), tool(92, 'create_session', { prompt: 'Read the handoff and resume', title: 'Resume' }), tool(93), tool(100), tool(104)]);
-  assert.match(said(out[1]), /roll over/);
-  assert.equal(said(out[2]), '');
-  assert.match(said(out[3]), /handed over to a new one/);
-  assert.equal(said(out[4]), '', 'at most every 10 minutes');
-  assert.match(said(out[5]), /handed over/);
-  assert.deepEqual(run([[0, 'sessionStart'], tool(92, 'create_session'), [95, 'agentStop', {}]])[2], {}, 'no block after handing over');
+test('worker launches never silence the coordinator or weaken any clock limit', () => {
+  assert.deepEqual([DEFAULTS.reviewMin, DEFAULTS.rolloverMin, DEFAULTS.rolloverTools, DEFAULTS.rolloverCompactions], [30, 90, 300, 2]);
+  for (const name of ['create_session', 'mcp_create_session', 'new_session', 'start_session']) {
+    assert.equal(recognise(name, { prompt: 'Read the handoff and resume' }), null);
+    const out = run([[0, 'sessionStart'], tool(1, name), tool(30), tool(90), [91, 'agentStop', {}]]);
+    assert.match(said(out[2]), /progress review due/);
+    assert.match(said(out[3]), /run 90 minutes/);
+    assert.match(said(out[3]), /Coordinators: hand the registry\/queue to one fresh coordinator/);
+    assert.match(said(out[3]), /without waiting for or restarting workers/);
+    assert.equal(out[4].decision, 'block');
+  }
+  const start = step(null, 'sessionStart', {}, T0, C).state;
+  for (const [state, expected] of [[{ ...start, tools: 299 }, /300 tool calls/], [{ ...start, compactions: 2 }, /compacted 2 times/]]) {
+    const result = step(state, 'postToolUse', { toolName: 'create_session' }, T0 + MIN, C);
+    assert.equal(result.state.rolledOver, 0);
+    assert.match(said(result.output), expected);
+  }
 });
 
 test('at the end of a turn with a roll-over due, it asks for one more turn, once, and never when already continuing', () => {
@@ -125,7 +136,7 @@ test('the hook keeps one state file per session, reads both payload styles, and 
   assert.equal(hook('postToolUse', '', { AO_CLOCK_DIR: join(dir, 's_1.json', 'x') }, T0), '{}', 'an unwritable folder');
 });
 
-test('from the command line: a hook event on stdin, then mark and status for the latest session in the folder', () => {
+test('from the command line: a hook event on stdin, then mark and status for the only session in the folder', () => {
   const dir = mkdtempSync(join(tmpdir(), 'clock-cli-'));
   const cwd = mkdtempSync(join(tmpdir(), 'clock-project-'));
   const clock = join(ROOT, 'tools', 'clock.mjs');
@@ -134,6 +145,42 @@ test('from the command line: a hook event on stdin, then mark and status for the
   assert.match(JSON.parse(out).additionalContext, /Session clock on/);
   assert.match(execFileSync(process.execPath, [clock, 'mark', 'review'], { cwd, env, encoding: 'utf8' }), /Marked review/);
   assert.match(execFileSync(process.execPath, [clock, 'status'], { cwd, env, encoding: 'utf8' }), /0 tool calls, 0 compactions; last review \d\d:\d\d; no roll-over due/);
+});
+
+test('explicit clock selection and successful handover leave other sessions and their limits alone', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'clock-roles-'));
+  const cwd = mkdtempSync(join(tmpdir(), 'clock-roles-project-'));
+  t.after(() => { rmSync(dir, { recursive: true }); rmSync(cwd, { recursive: true }); });
+  const env = { ...process.env, AO_CLOCK_DIR: dir };
+  const clock = join(ROOT, 'tools', 'clock.mjs');
+  const cli = (...args) => spawnSync(process.execPath, [clock, ...args], { cwd, env, encoding: 'utf8' });
+  for (const sessionId of ['coordinator', 'worker']) hook('sessionStart', JSON.stringify({ sessionId, cwd }), env, T0);
+  const readState = (id) => JSON.parse(readFileSync(join(dir, `${id}.json`), 'utf8'));
+  const worker = readState('worker');
+  const coordinator = readState('coordinator');
+  for (const args of [['status'], ['mark', 'rollover']]) {
+    const result = cli(...args);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /More than one session clock.*--session/);
+  }
+  assert.equal(cli('mark', 'rollover', '--session', 'missing').status, 1);
+  assert.equal(cli('mark', 'rollover', '--session').status, 2);
+  assert.equal(cli('mark', 'typo', '--session', 'worker').status, 2);
+  assert.deepEqual(readState('coordinator'), coordinator);
+  assert.deepEqual(readState('worker'), worker);
+  assert.match(cli('status', '--session', 'worker').stdout, /Session started/);
+  assert.equal(cli('mark', 'review', '--session', 'coordinator').status, 0);
+  assert.ok(readState('coordinator').lastReview > T0);
+  assert.equal(cli('mark', 'rollover', '--session', 'coordinator').status, 0);
+  assert.ok(readState('coordinator').rolledOver > T0);
+  assert.deepEqual(readState('worker'), worker, 'worker clock is not reset or marked by coordinator handover');
+  const now = Date.now() + MIN;
+  const event = (id, name = 'view', args = {}) => JSON.parse(hook('postToolUse', JSON.stringify({ sessionId: id, cwd, toolName: name, toolArgs: args }), env, now));
+  assert.match(said(event('coordinator')), /handed over to a new one/);
+  assert.equal(said(event('coordinator')), '', 'handed-over reminder is rate-limited');
+  assert.match(said(event('worker', 'powershell', { command: 'node orchestration-clock.mjs mark rollover --session missing' })), /roll over/, 'a failed mark is not treated as handover by the hook');
+  assert.equal(readState('worker').rolledOver, 0);
+  assert.deepEqual(JSON.parse(hook('agentStop', JSON.stringify({ sessionId: 'coordinator', cwd }), env, now)), {});
 });
 
 test('status and mark find the session when the hook reports the folder in another letter case on Windows', () => {
@@ -147,7 +194,9 @@ test('status and mark find the session when the hook reports the folder in anoth
   const cwd = mkdtempSync(join(tmpdir(), 'clock-case-project-'));
   const reported = process.platform === 'win32' ? cwd.replace(/^[A-Za-z]/, (d) => (d === d.toUpperCase() ? d.toLowerCase() : d.toUpperCase())) : cwd;
   hook('sessionStart', JSON.stringify({ sessionId: 'case', cwd: reported }), { AO_CLOCK_DIR: dir }, T0);
-  assert.equal(latest(dir, cwd)?.state.cwd, reported);
+  assert.equal(findSession(dir, cwd)?.state.cwd, reported);
+  assert.equal(findSession(dir, cwd, 'case')?.state.cwd, reported);
+  assert.equal(findSession(dir, join(cwd, 'other'), 'case'), null, 'cannot mark a clock from another working copy');
 });
 
 test('the installer writes the Copilot hooks once, keeps a tuned copy, and the hooks run the installed clock', () => {
@@ -158,6 +207,10 @@ test('the installer writes the Copilot hooks once, keeps a tuned copy, and the h
   assert.equal(json.version, 1);
   assert.deepEqual(Object.keys(json.hooks), ['sessionStart', 'postToolUse', 'preCompact', 'agentStop']);
   assert.equal(json.hooks.postToolUse[0].command, `node .github/hooks/${CLOCK} postToolUse`);
+  for (const entries of Object.values(json.hooks)) {
+    const env = entries[0].env;
+    assert.deepEqual([env.AO_REVIEW_MIN, env.AO_ROLLOVER_MIN, env.AO_ROLLOVER_TOOLS, env.AO_ROLLOVER_COMPACTIONS], ['30', '90', '300', '2']);
+  }
   assert.match(clockHooks(dir, true).text, /node \\"[^"]+\/\.copilot\/hooks\/orchestration-clock\.mjs\\" agentStop/);
 
   const install = () => execFileSync(process.execPath, [join(ROOT, 'tools', 'install.mjs'), dir, '--for', 'copilot'], { encoding: 'utf8' });

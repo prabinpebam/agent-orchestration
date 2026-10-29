@@ -55,6 +55,61 @@ test('the throughput reviewer asks the same questions as the progress-review ski
   const fromAgent = labels(read('agents', 'throughput-reviewer.agent.md'));
   assert.ok(fromAgent.length >= 8);
   assert.deepEqual(fromAgent, labels(read('skills', 'progress-review', 'SKILL.md')));
+  const question = (text, n) => text.split('\n').find((line) => line.startsWith(`${n}. `));
+  for (const n of [6, 9]) assert.equal(question(read('agents', 'throughput-reviewer.agent.md'), n), question(read('skills', 'progress-review', 'SKILL.md'), n));
+});
+
+test('the free coordinator stays separate from execution in all skills and installed instructions', () => {
+  for (const [name, text] of [
+    ...SKILLS.map((s) => [s, read('skills', s, 'SKILL.md')]),
+    ['section', section(null)], ['README', read('README.md')], ['AGENTS', read('AGENTS.md')],
+  ]) {
+    assert.match(text, /coordinator/i, `${name}: coordinator role`);
+    assert.match(text, /worker/i, `${name}: worker role`);
+  }
+  const entry = read('skills', 'orchestrate', 'SKILL.md');
+  assert.match(entry, /never does implementation, builds, test suites or long commands itself/);
+  assert.match(entry, /No sleeps, polling loops, blocking waits or watchers/);
+  assert.match(entry, /End each turn/);
+  assert.match(entry, /before acting on a new prompt or creating any worker or continuation/);
+  assert.match(section(null), /Keep coordinator turns short and end them/);
+  assert.match(read('skills', 'stage-validation', 'SKILL.md'), /Workers run checks/);
+});
+
+test('the registry, prompt triage and event-driven completion prevent duplicate writers', () => {
+  const coordinate = read('skills', 'coordinate', 'SKILL.md');
+  for (const prompt of ['Same area as a running writer', 'Independent of running work', 'Depends on running work', 'Correction']) {
+    assert.ok(coordinate.includes(`| ${prompt} |`), prompt);
+  }
+  for (const text of [coordinate, read('templates', 'work-plan.md'), read('templates', 'handoff.md')]) {
+    assert.match(text, /\| Task \| Owner worker \| Working copy \| State \| Trigger \| Completion signal \|/);
+    assert.match(text, /One writer per working copy/);
+    assert.match(text, /live worker list/);
+  }
+  assert.match(coordinate, /read \*\*unread messages and completion records, the live worker list, and the registry\/queue\*\*/);
+  assert.match(coordinate, /Record a launch as pending before dispatch/);
+  assert.match(coordinate, /An uncertain launch or missing reply is not permission to retry/);
+  assert.match(coordinate, /stale or duplicate report cannot release the queue twice/);
+  assert.match(coordinate, /Only the coordinator updates its registry/);
+  assert.match(coordinate, /Never wait in a loop/);
+  assert.match(coordinate, /If messaging is absent, workers write records/);
+  assert.match(coordinate, /without waiting for workers or stopping their work/);
+  assert.match(coordinate, /Worker clocks and limits are unchanged/);
+});
+
+test('portability names the VS Code lesson without promising concurrency in every tool', () => {
+  for (const text of [read('skills', 'orchestrate', 'SKILL.md'), read('README.md')]) {
+    assert.match(text, /VS Code agent sessions/);
+    assert.match(text, /until its turn ended/);
+    assert.match(text, /hooks fired between turns/);
+    assert.match(text, /Other tools.*may behave differently/);
+    for (const question of ['parallel conversations or agents', 'messages reach a busy conversation', 'notify on completion', 'registry persist', 'input.*mid-turn']) {
+      assert.match(text, new RegExp(question), question);
+    }
+    assert.match(text, /[Ss]ingle-threaded/);
+    assert.match(text, /queue in a file/);
+    assert.match(text, /owner to re-prompt/);
+  }
 });
 
 test('execution control only: no product-reasoning skills or templates, and no dependence on another harness', () => {
@@ -112,11 +167,15 @@ test('a re-run adds a fact the harness gained since to filled-in facts, keeping 
   assert.match(once, /- \*\*Product intent:\*\* docs\/spec\.md/);
   assert.match(once, /- \*\*Progress log:\*\* ~\/logs\/p\.log/);
   assert.match(once, /- \*\*Review build:\*\* <how to start/);
+  assert.match(once, /- \*\*Coordinator registry:\*\* <session-store location/);
   assert.ok(once.indexOf('**Review build:**') < once.indexOf('**Reviews and escalation:** review every 20 minutes'), 'added before the last fact');
   assert.equal((once.match(/\*\*Review build:\*\*/g) ?? []).length, 1);
-  const filled = once.replace(/- \*\*Review build:\*\* <[^\n]*/, '- **Review build:** a worktree at the last validated commit, port 4000');
+  const filled = once.replace(/- \*\*Review build:\*\* <[^\n]*/, '- **Review build:** a worktree at the last validated commit, port 4000')
+    .replace(/- \*\*Coordinator registry:\*\* <[^\n]*/, '- **Coordinator registry:** ignored queue.json; worker messages and completion records');
   const again = withSection(filled);
   assert.match(again, /- \*\*Review build:\*\* a worktree at the last validated commit, port 4000/);
+  assert.match(again, /- \*\*Coordinator registry:\*\* ignored queue\.json; worker messages and completion records/);
+  assert.equal((again.match(/\*\*Coordinator registry:\*\*/g) ?? []).length, 1);
   assert.equal(withSection(again), again, 'a third run changes nothing');
   assert.equal(mergeFacts(null, '- **A:** <a>'), '- **A:** <a>');
 });
@@ -162,6 +221,8 @@ test('the installer runs from the command line and is idempotent', () => {
   const run = () => execFileSync(process.execPath, [join(ROOT, 'tools', 'install.mjs'), dir, '--for', 'copilot,agents', '--templates', 'docs/work'], { encoding: 'utf8' });
   assert.match(run(), /installed \d+ skills and \d+ agents for copilot, agents/);
   assert.ok(existsSync(join(dir, '.github', 'skills', 'orchestrate', 'SKILL.md')));
+  for (const s of SKILLS) assert.equal(readFileSync(join(dir, '.github', 'skills', s, 'SKILL.md'), 'utf8'), read('skills', s, 'SKILL.md'));
+  for (const a of readdirSync(join(ROOT, 'agents'))) assert.equal(readFileSync(join(dir, '.github', 'agents', a), 'utf8'), read('agents', a));
   assert.ok(existsSync(join(dir, '.agents', 'skills', 'orchestrate', 'SKILL.md')));
   assert.ok(existsSync(join(dir, 'docs', 'work', 'work-plan.md')));
   const after = readFileSync(join(dir, 'AGENTS.md'), 'utf8');

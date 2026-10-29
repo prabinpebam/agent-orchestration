@@ -11,15 +11,16 @@
  * review was) and answers with a reminder the agent sees after its next tool result:
  * - a progress review is due (every AO_REVIEW_MIN minutes, default 30), repeated every AO_RENUDGE_MIN (5) until done;
  * - the session should roll over to a new one (after AO_ROLLOVER_MIN minutes, default 90, or AO_ROLLOVER_TOOLS tool
- *   calls, default 300, or AO_ROLLOVER_COMPACTIONS compactions, default 2), repeated until a new session is started.
+ *   calls, default 300, or AO_ROLLOVER_COMPACTIONS compactions, default 2), repeated until handover is explicitly marked.
  * At the end of a turn with a roll-over due, it asks for one more turn to do it (once).
  *
  * A review counts as done when the agent runs the `throughput-reviewer` agent, loads the `progress-review` skill, or
- * runs `node orchestration-clock.mjs mark review`. A roll-over counts as done when the agent starts a new session with a
- * session tool, or runs `node orchestration-clock.mjs mark rollover` (after asking the owner to open one).
+ * runs `node orchestration-clock.mjs mark review`. Only a successful `mark rollover` acknowledges a handover.
+ * Starting a worker session must never silence the coordinator's clock.
  *
- *   node orchestration-clock.mjs mark <review | rollover>   marks the latest session in this folder
- *   node orchestration-clock.mjs status                     prints the latest session's clock
+ *   node orchestration-clock.mjs mark <review | rollover> [--session <id>]
+ *   node orchestration-clock.mjs status [--session <id>]
+ * Without an ID, the folder must have exactly one clock; never guess between a coordinator and its workers.
  *
  * State lives in AO_CLOCK_DIR (default: the system's temporary folder), never in the project. Tool arguments are read
  * only to recognise those commands; nothing from them is stored or printed.
@@ -59,14 +60,10 @@ export function fresh(/** @type {string} */ cwd, /** @type {number} */ now) {
 const hhmm = (/** @type {number} */ t) => new Date(t).toTimeString().slice(0, 5);
 const mins = (/** @type {number} */ ms) => Math.max(0, Math.round(ms / MIN));
 
-/** What the tool call was, for the clock: a review, a new session, a mark command, or nothing. */
+/** Review tools only. Mark commands update their selected clock directly, only when they succeed. */
 export function recognise(/** @type {string} */ toolName, /** @type {unknown} */ toolArgs) {
   const args = /** @type {Record<string, unknown>} */ (toolArgs && typeof toolArgs === 'object' ? toolArgs : {});
-  const text = typeof toolArgs === 'string' ? toolArgs : JSON.stringify(toolArgs ?? '');
-  const mark = /clock\.mjs[\\"']*\s+mark\s+(review|rollover)\b/.exec(text);
-  if (mark) return /** @type {'review' | 'rollover'} */ (mark[1]);
   const name = toolName.toLowerCase();
-  if (/(^|_)(create|new|start)_?session$/.test(name)) return 'rollover';
   const agent = String(args.agent_type ?? args.agentType ?? args.subagent_type ?? args.agent ?? '');
   if (agent === 'throughput-reviewer') return 'review';
   if (name === 'skill' && String(args.skill ?? args.name ?? '') === 'progress-review') return 'review';
@@ -82,7 +79,7 @@ export function rolloverReason(/** @type {State} */ s, /** @type {number} */ now
 }
 
 export const rolloverSteps = (/** @type {Config} */ c) =>
-  `At the next safe point (the current step checked, not mid-edit): commit the verified work, write the handoff (with where the review build is), add a log line, then start a new session whose first prompt says to read the handoff and resume, with the same mode and bounds. Without a tool that starts sessions, tell the owner to open one with that prompt and run \`${c.cmd} mark rollover\`. Then stop working in this one: one session at a time. This is required; don't start another increment first.`;
+  `Workers: at the next safe point (the current step checked, not mid-edit), commit the verified work, write the handoff (with where the review build is), and add a log line. Coordinators: hand the registry/queue to one fresh coordinator without waiting for or restarting workers; their clocks keep running. Before either role creates a successor, check unread messages and live workers for one already created. Resume with the handoff, same role, mode and bounds. After ownership transfers, run \`${c.cmd} mark rollover\` (add \`--session <id>\` when clocks share a folder). Without a session tool, give the owner the resume prompt, then mark the roll-over. A worker launch is not a roll-over. Stop working in this old session; one writer per working copy. This is required; don't start another increment first.`;
 
 /**
  * One hook event: the new state and what to say back. Pure, for tests.
@@ -118,10 +115,6 @@ export function step(state, event, input, now, c) {
   if (seen === 'review') {
     s.lastReview = now;
     s.reviewNudged = 0;
-  }
-  if (seen === 'rollover' && !s.rolledOver) {
-    s.rolledOver = now;
-    return { state: s, output: {} };
   }
   /** @type {string[]} */
   const say = [];
@@ -167,15 +160,18 @@ export function samePath(/** @type {string} */ a, /** @type {string} */ b, platf
   return resolve(a || '.') === resolve(b || '.');
 }
 
-/** The latest session seen in this folder (one session at a time per project). */
-export function latest(/** @type {string} */ dir, /** @type {string} */ cwd) {
+/** Select a clock explicitly, or the only clock in a folder. Ambiguity must never mark another role's clock. */
+export function findSession(/** @type {string} */ dir, /** @type {string} */ cwd, /** @type {string | undefined} */ id = undefined) {
   if (!existsSync(dir)) return null;
-  let best = /** @type {{ file: string, state: State } | null} */ (null);
-  for (const f of readdirSync(dir).filter((x) => x.endsWith('.json'))) {
+  let found = /** @type {{ file: string, state: State } | null} */ (null);
+  const files = id ? [`${safe(id)}.json`] : readdirSync(dir).filter((x) => x.endsWith('.json'));
+  for (const f of files) {
     const state = load(join(dir, f));
-    if (state && samePath(state.cwd, cwd) && (!best || state.seen > best.state.seen)) best = { file: join(dir, f), state };
+    if (!state || !samePath(state.cwd, cwd)) continue;
+    if (found) throw new Error('More than one session clock for this folder; pass --session <id>.');
+    found = { file: join(dir, f), state };
   }
-  return best;
+  return found;
 }
 
 /** Runs one hook event from its JSON payload; returns what to print. Never throws: a broken clock must not stop work. */
@@ -199,20 +195,28 @@ export function hook(/** @type {string} */ event, /** @type {string} */ raw, /**
 function main(/** @type {string[]} */ argv) {
   const [cmd, what] = argv;
   if (cmd === 'mark' || cmd === 'status') {
-    const found = latest(clockDir(), process.cwd());
+    const rest = argv.slice(cmd === 'mark' ? 2 : 1);
+    if ((cmd === 'mark' && !['review', 'rollover'].includes(what)) ||
+        (rest.length && (rest.length !== 2 || rest[0] !== '--session' || !rest[1] || rest[1].startsWith('--')))) {
+      console.error('Usage: status [--session <id>] | mark <review | rollover> [--session <id>]');
+      return 2;
+    }
+    let found;
+    try {
+      found = findSession(clockDir(), process.cwd(), rest[1]);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      return 1;
+    }
     if (!found) {
-      console.log('No session clock for this folder yet.');
-      return cmd === 'status' ? 0 : 1;
+      console.error('No matching session clock for this folder.');
+      return 1;
     }
     const s = found.state;
     const now = Date.now();
     if (cmd === 'mark') {
       if (what === 'review') Object.assign(s, { lastReview: now, reviewNudged: 0 });
-      else if (what === 'rollover') s.rolledOver = now;
-      else {
-        console.error('Usage: mark <review | rollover>');
-        return 2;
-      }
+      else s.rolledOver = now;
       writeFileSync(found.file, JSON.stringify(s));
       console.log(`Marked ${what} at ${hhmm(now)}.`);
       return 0;
@@ -222,7 +226,7 @@ function main(/** @type {string[]} */ argv) {
     return 0;
   }
   if (!cmd) {
-    console.error('Usage: orchestration-clock.mjs <sessionStart | postToolUse | preCompact | agentStop> < payload.json | mark <review | rollover> | status');
+    console.error('Usage: orchestration-clock.mjs <sessionStart | postToolUse | preCompact | agentStop> < payload.json | mark <review | rollover> [--session <id>] | status [--session <id>]');
     return 2;
   }
   let raw = '';

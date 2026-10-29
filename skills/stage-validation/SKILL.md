@@ -7,6 +7,8 @@ description: Use when deciding which checks to run, what evidence a stage or cha
 
 Check what a change can affect, at the depth its stage needs. A prototype needs proof that it can be tried; a release needs proof that nothing broke. Evidence is observable: a test and its count, a command and its output, a measurement, a screenshot looked at. Never "should work".
 
+**Workers run checks.** Implementation, builds, test suites, deploy watching and review-build refreshes belong to bounded workers, not the main coordinator chat. The coordinator reads completion evidence cheaply, sends missing checks back to a worker and releases queued work only when its trigger is met. It never waits in a loop or holds a turn open for results (`coordinate`).
+
 ## Evidence by goal
 
 | Goal mode | Evidence that counts | Not needed yet |
@@ -32,7 +34,7 @@ Tier 3 triggers: several features since the last full run, or before a release o
 
 **Performance checks:** run the project's benchmark against its baseline after a change to what a person waits on (the server, data loading, media handling, a layout or a page's loading), before a release, and for any claim that something is faster; the budgets run with every production build. Copy and docs changes need neither.
 
-Rules: run long suites in the background while doing other work, when the tool allows it; never run two heavy suites at once; rerun a single timeout before investigating; say in the summary what you ran, what you skipped, and why.
+Worker rules: run long suites in the background while doing other work, when the tool allows it; never run two heavy suites at once; rerun a single timeout before investigating; report completion by message or record, with what you ran, what you skipped, and why. Without background support, a worker may run a bounded check synchronously; the coordinator must remain free.
 
 ## The build-check-fix loop
 
@@ -73,7 +75,7 @@ Before showing the owner anything visual, check the basics for what's being show
 
 ## Branches, merges, deploys
 
-- Work in a separate branch (or worktree) so the owner's working copy is never disturbed. Keep branches short-lived: an hour at most.
+- Work in a separate branch and, for parallel writers, an isolated worktree or other working copy so the owner's working copy is never disturbed. One writer per working copy; branches alone do not isolate writers. Keep branches short-lived: an hour at most.
 - **Merge exactly what was tested** (fast-forward).
 - Merging into the main branch, pushing and deploying are separate permissions, each a project fact or a bound; none is assumed. Where they're allowed, do them and watch the deploy and its checks until they pass. What's live must never break; if it does, fix forward or revert at once.
 - Where they aren't allowed, or the project has no remote or deploy (a library, a local tool), stop at "validated and ready to merge" or "ready to release", and put the exact owner action in the handoff: which branch or commit, the command, and what to watch.
