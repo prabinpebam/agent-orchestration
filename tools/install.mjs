@@ -21,10 +21,11 @@
  * Without --for it installs for Copilot, plus Claude Code when the project has .claude/ or CLAUDE.md, plus the
  * open skills layout when the project has .agents/.
  */
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { argumentsFor, copyTree, prepare, finish, output, safe } from './install-contract.mjs';
 
 const HERE = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const START = '<!-- agent-orchestration:start -->';
@@ -106,9 +107,9 @@ export const CLOCK_HOOKS = 'orchestration-clock.json';
 const hooksDir = (/** @type {string} */ base, /** @type {boolean} */ global) => join(base, global ? '.copilot' : '.github', 'hooks');
 
 /** The Copilot hook configuration that runs the session clock, and where it goes. */
-export function clockHooks(/** @type {string} */ target, /** @type {boolean} */ global) {
+export function clockHooks(/** @type {string} */ target, /** @type {boolean} */ global, logicalRoot = global ? homedir() : target) {
   const dir = hooksDir(global ? homedir() : target, global);
-  const script = global ? join(dir, CLOCK).replace(/\\/g, '/') : `.github/hooks/${CLOCK}`;
+  const script = global ? join(logicalRoot, '.copilot', 'hooks', CLOCK).replace(/\\/g, '/') : `.github/hooks/${CLOCK}`;
   const cmd = `node ${global ? `"${script}"` : script}`;
   const env = { AO_REVIEW_MIN: '30', AO_ROLLOVER_MIN: '90', AO_ROLLOVER_TOOLS: '300', AO_ROLLOVER_COMPACTIONS: '2', AO_CLOCK_CMD: cmd };
   const entry = (/** @type {string} */ event) => [{ type: 'command', command: `${cmd} ${event}`, timeoutSec: 10, env }];
@@ -125,64 +126,42 @@ export function defaultKinds(/** @type {string} */ root) {
   ];
 }
 
-function main(/** @type {string[]} */ argv) {
-  const flag = (/** @type {string} */ k) => {
-    const i = argv.indexOf(k);
-    return i >= 0 ? argv[i + 1] : undefined;
-  };
-  const global = argv.includes('--global');
-  const dry = argv.includes('--dry-run');
-  const target = global ? homedir() : argv.find((a, i) => !a.startsWith('--') && !['--for', '--templates'].includes(argv[i - 1]));
-  if (!target) {
-    console.error('Usage: node tools/install.mjs <project folder> [--for copilot,claude,agents] [--templates <folder>] [--dry-run] | --global [--for copilot,claude,agents]');
-    return 2;
+export function contract(argv) {
+  const o = argumentsFor(argv, ['logical-root']);
+  if (!o.target && !o.global) throw Object.assign(new Error('Choose a project folder or --global.'), { code: 2 });
+  const root = resolve(o.global ? homedir() : o.target);
+  if (!o.kinds.length) {
+    if (o.json || !process.stdin.isTTY) throw Object.assign(new Error('Choose --for copilot,claude,agents explicitly.'), { code: 2 });
+    o.kinds = defaultKinds(root);
   }
-  const root = resolve(target);
-  if (!existsSync(root)) {
-    console.error(`No folder at ${root}`);
-    return 2;
+  const entries = [];
+  const kept = [];
+  for (const c of plan(root, o.kinds, o.global)) {
+    const to = c.to.slice(root.length + 1).replaceAll('\\', '/');
+    const from = c.from.slice(HERE.length + 1).replaceAll('\\', '/');
+    if (from.startsWith('skills/')) entries.push(...copyTree(HERE, from, to));
+    else entries.push({ path: to, bytes: readFileSync(c.from) });
   }
-  const given = flag('--for');
-  const kinds = given ? given.split(',').map((k) => k.trim()).filter(Boolean) : global ? ['copilot', 'claude'] : defaultKinds(root);
-  const say = (/** @type {string} */ s) => console.log(`${dry ? '(dry run) ' : ''}${s}`);
-  for (const c of plan(root, kinds, global)) {
-    say(`copy ${c.to}`);
-    if (!dry) {
-      mkdirSync(dirname(c.to), { recursive: true });
-      cpSync(c.from, c.to, { recursive: true });
-    }
+  if (o.kinds.includes('copilot')) {
+    const h = clockHooks(root, o.global, o['logical-root'] ? resolve(o['logical-root']) : root);
+    if (existsSync(h.file) && !o.uninstall) kept.push(h.file);
+    entries.push({ path: h.file.slice(root.length + 1).replaceAll('\\', '/'), bytes: Buffer.from(h.text), policy: 'keep' });
   }
-  if (kinds.includes('copilot')) {
-    const h = clockHooks(root, global);
-    if (existsSync(h.file)) say(`keep ${h.file} (the session clock's hooks and limits)`);
-    else {
-      say(`create ${h.file} (the session clock's hooks)`);
-      if (!dry) {
-        mkdirSync(dirname(h.file), { recursive: true });
-        writeFileSync(h.file, h.text);
-      }
-    }
+  if (!o.global) {
+    for (const name of ['AGENTS.md', ...(existsSync(join(root, 'CLAUDE.md')) ? ['CLAUDE.md'] : [])]) entries.push({ path: name, section: { start: START, end: END, transform: withSection } });
+    if (o.templates) { safe(root, o.templates); entries.push(...copyTree(HERE, 'templates', o.templates, 'keep')); }
   }
-  if (!global) {
-    for (const name of ['AGENTS.md', ...(existsSync(join(root, 'CLAUDE.md')) ? ['CLAUDE.md'] : [])]) {
-      const file = join(root, name);
-      const before = existsSync(file) ? readFileSync(file, 'utf8') : '';
-      const after = withSection(before);
-      if (after !== before) {
-        say(`${before ? 'update' : 'create'} ${file} (the Orchestration section)`);
-        if (!dry) writeFileSync(file, after);
-      }
-    }
-    const tpl = flag('--templates');
-    if (tpl) {
-      const to = resolve(root, tpl);
-      say(`copy templates to ${to} (files already there are kept)`);
-      if (!dry) cpSync(join(HERE, 'templates'), to, { recursive: true, force: false, errorOnExist: false });
-    }
+  const allowed = (p) => ['AGENTS.md', 'CLAUDE.md'].includes(p) && !o.global
+    || ['.github', '.copilot', '.claude', '.agents'].some((d) => p.startsWith(`${d}/skills/`) && skills().some((s) => p.startsWith(`${d}/skills/${s}/`))
+      || p.startsWith(`${d}/agents/`) && agents().some((a) => p === `${d}/agents/${d === '.claude' ? a.replace('.agent.md', '.md') : a}`)
+      || ['.github', '.copilot'].includes(d) && [CLOCK, CLOCK_HOOKS].some((f) => p === `${d}/hooks/${f}`))
+    || !!o.templates && p.startsWith(`${o.templates}/`);
+  const result = finish(prepare({ id: 'agent-orchestration', root, entries, allowed, uninstall: o.uninstall, effects: ['writes-project-files', 'runs-hooks'], settings: { kinds: o.kinds, global: !!o.global, templates: o.templates ?? null } }), o, 'Fill in the Orchestration Project facts. The session clock is mandatory.');
+  result.kept = kept;
+  if (!o.json && result.status === 'ok') {
+    for (const file of kept) console.log(`keep ${file} (the session clock’s hooks and limits)`);
+    console.log(`${o['dry-run'] ? 'planned' : o.uninstall ? 'removed' : 'installed'} ${skills().length} skills and ${agents().length} agents for ${o.kinds.join(', ')}${o.kinds.includes('copilot') ? ', with the session clock' : ''}`);
   }
-  say(`installed ${skills().length} skills and ${agents().length} agents for ${kinds.join(', ')}${kinds.includes('copilot') ? ', with the session clock' : ''}${global ? ' (for every project on this computer)' : ''}`);
-  if (!global) say('next: fill in the "Project facts" in the Orchestration section of AGENTS.md');
-  return 0;
+  return result;
 }
-
-if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) process.exitCode = main(process.argv.slice(2));
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) process.exitCode = output(() => contract(process.argv.slice(2)), process.argv.slice(2));
