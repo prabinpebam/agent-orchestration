@@ -19,6 +19,7 @@ The **coordinator** is the main conversation. Its only job is to take owner prom
 - **Live state first.** At the start of every turn, read unread messages and completion records, the live worker list and the durable registry/queue (`coordinate`). Reconcile them before acting on a new prompt or creating any worker or continuation.
 - **One writer per working copy, always.** Steer its worker or queue a follow-up; independent writers need isolated working copies and branches. A branch name alone does not isolate a shared folder.
 - **Event-driven completion.** Workers report by message, a completion record, or both. Read reports at turn boundaries, never wait for them in a loop. A cheap delivery check reads evidence; a build or test needed to verify it goes to a worker.
+- **Yielding is not finishing.** Ending a coordinator turn returns control to the owner; it doesn't complete the owner's task. While dispatched or queued work remains, never call a task-completion action or report done just to silence automated keep-working reminders. Say what's running and how it will report. If the host can't idle with work pending, state that limitation and use its supported continuation; don't promise behavior it lacks.
 - **The role survives the session.** The coordinator has the same clock limits as workers. At its limit, transfer the registry to one fresh coordinator, which adopts running workers and keeps orchestrating. Don't wait for workers to finish, recreate them, or reset their clocks.
 
 These are role boundaries, not an instruction for every worker to spawn more workers. A bounded worker carries out its own assignment.
@@ -124,6 +125,7 @@ Other tools and versions may behave differently. The principle is portable: keep
 - Does it notify on completion?
 - Where can the registry persist so a successor can read it?
 - What happens to input that arrives mid-turn?
+- Can a turn end with work still pending, without marking the task complete?
 
 **Single-threaded fallback:** keep turns short, keep the queue in a file, check status and completion records at the start of each turn, and ask the owner to re-prompt to resume queued work. If execution must share the chat, explicitly separate a bounded worker turn from coordinator triage and return to triage before another step. Put long checks in an external worker or give the owner the command; never simulate availability with sleeps or polling. Say plainly that concurrent input handling is unavailable; don't promise automatic wake-up where the tool has none.
 

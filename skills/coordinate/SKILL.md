@@ -41,6 +41,8 @@ Workers report completion or a blocker by **message, a completion record, or bot
 
 The coordinator reads reports at the start of each turn, verifies deliveries cheaply, updates the queue and ends the turn. **Never wait in a loop**, sleep, poll or run a watcher to hold the conversation open. If messaging is absent, workers write records and the coordinator checks them at the start of each turn. If nothing can wake the coordinator, ask the owner to re-prompt; use `orchestrate`'s single-threaded fallback rather than pretending the chat remains responsive during long work.
 
+**Ending a turn is not completion.** The owner's task is done only when every dispatched part has verified evidence. While workers or queued items remain, never call a task-completion action, or claim done, to silence automated keep-working reminders; report the running work and its completion route instead. Where the host can't idle with work pending, state that limitation and use its supported continuation.
+
 ### Progress log lines
 
 `YYYY-MM-DD HH:MM [goal · attention] <item>: <what happened>; <evidence>; <next>`

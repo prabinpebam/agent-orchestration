@@ -74,6 +74,15 @@ test('the free coordinator stays separate from execution in all skills and insta
   assert.match(entry, /before acting on a new prompt or creating any worker or continuation/);
   assert.match(section(null), /Keep coordinator turns short and end them/);
   assert.match(read('skills', 'stage-validation', 'SKILL.md'), /Workers run checks/);
+  const coordinate = read('skills', 'coordinate', 'SKILL.md');
+  for (const [name, text] of [['orchestrate', entry], ['coordinate', coordinate], ['section', section(null)], ['README', read('README.md')], ['AGENTS', read('AGENTS.md')]]) {
+    assert.match(text, /[Ee]nding a (coordinator )?turn is not complet|doesn't complete the owner's task/, `${name}: yielding is not completion`);
+    assert.match(text, /silence (automated )?keep-working reminders/, `${name}: never complete to silence reminders`);
+  }
+  for (const text of [entry, coordinate, section(null), read('README.md')]) {
+    assert.match(text, /can't idle with work pending/);
+    assert.match(text, /supported continuation/);
+  }
 });
 
 test('the registry, prompt triage and event-driven completion prevent duplicate writers', () => {

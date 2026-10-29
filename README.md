@@ -58,6 +58,8 @@ At the start of every coordinator turn, read unread messages and completion reco
 
 Keep a durable registry in the session's own store or an ignored file: **task, owner worker, working copy, state, trigger, completion signal**, plus coordinator/successor IDs. Workers report by message, completion record or both. The coordinator checks evidence and updates the queue at turn boundaries, never in a waiting loop. Before any worker or continuation is created, check pending messages and live workers for an existing owner or successor. Record uncertain launches and reconcile them rather than retrying.
 
+**Ending a coordinator turn is not completion.** The owner's task is done only when every dispatched part has verified evidence. Never mark it complete to silence automated keep-working reminders while workers or queued items remain. Where the host can't idle with work pending, state that limitation and use its supported continuation.
+
 ## The review build
 
 The owner reviews when they choose, not when the agent stops. So a **review build** is always built, running and ready to try: a local site or a stable build of the app, at the **last validated commit**, isolated from development so the owner can give early input and change course without disturbing the work, and without the work breaking what they're looking at.
@@ -127,6 +129,7 @@ Check each tool or IDE:
 - Does it notify on completion?
 - Where can the registry persist?
 - What happens to input arriving mid-turn?
+- Can a turn end with work still pending, without marking the task complete?
 
 Without messaging, workers write completion records and the coordinator checks them at the start of each turn. In a **single-threaded tool**, keep turns short, keep the queue in a file, check status first and ask the owner to re-prompt. Explicitly separate a bounded worker turn when necessary; long checks go to an external worker or the owner, not a blocking coordinator turn. Don't promise concurrent input handling or automatic wake-up when unavailable. `orchestrate` gives the remaining fallbacks for clocks, hooks, review builds and session memory.
 
