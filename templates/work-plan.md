@@ -36,8 +36,10 @@ IDs: product IDs (P1, U1, A1, O1, PD1, 1.1) are cited only when the product inte
 | Escalate when | <a credential, a decision with lasting consequences, anything irreversible, public or costly> |
 | Review interval | <30 minutes unless a project fact says otherwise> |
 | Session limits | <90 minutes, 300 tool calls or 2 compactions, whichever comes first; coordinator and workers each keep their clock> |
-| Coordinator | <main chat ID; routing and records only, short turns, no implementation or blocking waits> |
+| Main chat | <its ID; triage only: reads live state, routes each prompt, updates this plan, replies in one to three lines> |
+| Coordinator | <the current coordinator's ID (the main chat for short work, its own chat for long or multi-track work); registry, dependency map, routing and verification; short turns, no implementation or blocking waits> |
 | Registry/queue | <authoritative session-store location or ignored file; readable by a successor> |
+| Reference products | <the products whose current behaviour settles how something should work, in order; or the project fact> |
 | Review build | <where the owner tries the work: its own checkout at the last validated commit, its port or data folder, how to refresh it> |
 
 ### Live ownership and queue
@@ -46,9 +48,9 @@ Keep the live registry at the location above, not in a second competing copy of 
 
 | Task | Owner worker | Working copy | State | Trigger | Completion signal |
 |---|---|---|---|---|---|
-| <ID and objective> | <worker ID; predecessor/successor> | <absolute path and branch> | <queued, launching, running, stopping, blocked, done> | <exact prerequisite or ready> | <message route or record path; task/attempt ID and evidence> |
+| <ID and objective; the files or areas it touches> | <worker ID; predecessor/successor> | <absolute path and branch> | <queued, launching, running, stopping, blocked, done> | <the task IDs it depends on and the event that releases it, or ready> | <message route or record path; task/attempt ID and evidence> |
 
-At every coordinator turn, read unread messages, completion records, the live worker list and this queue before dispatch. One writer per working copy. Record launches before dispatch; check for an existing worker or successor before creating one. Report by event, never by a blocking completion-file poll.
+At every coordinator turn, read unread messages, completion records, the live worker list and this queue before dispatch. The Trigger column is the dependency map: dispatch every ready item as a parallel track, each with its own working copy, branch, worker and completion record, not just the next in line. One writer per working copy. Record launches before dispatch; check for an existing worker or successor before creating one. Report by event, never by a blocking completion-file poll. Sub-chats message the main chat only for an owner decision, something to try, or a safety blocker, in at most 3 plain lines.
 
 ## 3. Increments
 

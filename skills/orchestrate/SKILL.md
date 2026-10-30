@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Use at the start of any multi-step task, when triaging new prompts against running workers and queued work, and always when the owner is away or says "unattended". The entry point to agent-orchestration - keeps the main chat a free coordinator, separates worker roles, picks an execution mode, sets bounds, runs the plan-act-check-record-review loop under the mandatory session clock, and routes to modes, stage validation, progress reviews and coordination.
+description: Use at the start of any multi-step task, when triaging new prompts against running workers and queued work, and always when the owner is away or says "unattended". The entry point to agent-orchestration - keeps the main chat free for triage only, separates coordinator and worker roles, triages every owner prompt into the plan, runs independent items as parallel tracks, picks an execution mode, sets bounds, runs the plan-act-check-record-review loop under the mandatory session clock, and routes to modes, stage validation, progress reviews and coordination.
 ---
 
 # Orchestrate: run the work, watch it, adapt
@@ -11,18 +11,53 @@ How an agent carries out work: which mode, which checks, how progress is recorde
 
 **Useful, validated outcomes per unit of time.** Not tasks completed, not checklists ticked, not foundations laid before anything needs them. The owner's time and attention are the constraint: never make them wait on checks a change doesn't need, and never make them catch basic mistakes.
 
-## Keep the coordinator free
+## Keep the main chat free
 
-The **coordinator** is the main conversation. Its only job is to take owner prompts, read worker messages, triage and route work, queue dependencies, launch workers, steer or correct them, stop duplicates, verify deliveries cheaply and report. **Workers** do implementation, builds, test suites and long commands in bounded sessions.
+The **main chat** is where the owner talks to the agent. It's used only for triage; everything else is delegated. **If the main chat isn't ready for the owner's next input, that's a failure**, however well the rest is going.
 
-- **Short turns.** The coordinator never does implementation, builds, test suites or long commands itself. No sleeps, polling loops, blocking waits or watchers that hold its turn open, even when called "background". End each turn after routing and recording, so the next owner prompt or worker message can be read.
+Three roles:
+
+- **Main chat:** reads each owner prompt and live state, triages it (below), routes it and ends its turn with a one- to three-line reply.
+- **Coordinator:** owns the registry/queue and its dependency map, launches, steers and stops workers, verifies their deliveries and keeps the records (`coordinate`). For short work the main chat can be the coordinator too. For long-running or multi-track work, the coordinator runs in its own chat: **main chat (triage only) → one delivery coordinator → bounded workers.**
+- **Workers** do implementation, builds, test suites and long commands in bounded sessions.
+
+The rules:
+
+- **Short turns.** The coordinator never does implementation, builds, test suites or long commands itself, and neither does the main chat. No sleeps, polling loops, blocking waits or watchers that hold its turn open, even when called "background". End each turn after routing and recording, so the next owner prompt or worker message can be read.
+- **The failure to avoid.** In long-running work the agent starts implementing in the main chat itself. Messages from other chats then queue behind its turn and get stuck, and the owner can't steer. When you notice it, stop at a safe point, hand the work to a worker, and return to triage.
 - **Live state first.** At the start of every turn, read unread messages and completion records, the live worker list and the durable registry/queue (`coordinate`). Reconcile them before acting on a new prompt or creating any worker or continuation.
 - **One writer per working copy, always.** Steer its worker or queue a follow-up; independent writers need isolated working copies and branches. A branch name alone does not isolate a shared folder.
-- **Event-driven completion.** Workers report by message, a completion record, or both. Read reports at turn boundaries, never wait for them in a loop. A cheap delivery check reads evidence; a build or test needed to verify it goes to a worker.
-- **Yielding is not finishing.** Ending a coordinator turn returns control to the owner; it doesn't complete the owner's task. While dispatched or queued work remains, never call a task-completion action or report done just to silence automated keep-working reminders. Say what's running and how it will report. If the host can't idle with work pending, state that limitation and use its supported continuation; don't promise behavior it lacks.
+- **Event-driven completion.** Workers report by message, a completion record, or both. Read reports at turn boundaries, never wait for them in a loop. The coordinator owns verification: a cheap delivery check reads evidence, and a build or test needed to verify it goes to a worker. With a delivery coordinator, the main chat doesn't re-verify routine deliveries or run watchers.
+- **A quiet main chat.** Sub-chats message the main chat only for a decision only the owner can make, something new ready to try, or a safety blocker: at most 3 plain lines, no IDs or jargon. Routine acknowledgements, milestones, dispatch notes and transfer notices go to the coordinator and the records. The main chat doesn't acknowledge stale or routine notes, and ignores messages from a retired coordinator (`coordinate`).
+- **One coordinator at a time.** The main chat routes new owner direction to the current coordinator, found from the registry. It never creates a second coordinator.
+- **Yielding is not finishing.** Ending a coordinator turn returns control to the owner; it doesn't complete the owner's task. While dispatched or queued work remains, never call a task-completion action or report done just to silence automated keep-working reminders. Answer each reminder in one line: what's running and how it will report. If the host can't idle with work pending, state that limitation and use its supported continuation; don't promise behavior it lacks.
 - **The role survives the session.** The coordinator has the same clock limits as workers. At its limit, transfer the registry to one fresh coordinator, which adopts running workers and keeps orchestrating. Don't wait for workers to finish, recreate them, or reset their clocks.
 
 These are role boundaries, not an instruction for every worker to spawn more workers. A bounded worker carries out its own assignment.
+
+## Triage every owner prompt
+
+Each new input is weighed against the work that's running and queued, and the plan changes to include it. For every owner prompt:
+
+1. **Read live state:** unread messages, completion records, the registry/queue and the live workers.
+2. **Classify the input:** a new item, a change of direction for a running item, a priority change, a rule change, or a question.
+3. **Find the affected tracks:** the running and queued items it touches, and what depends on them.
+4. **Steer, queue or launch** (`coordinate` has the table): steer the owner of a running item it changes; queue what depends on running work, with its trigger; launch what's independent, in parallel (below). A rule change reaches every live coordinator and worker it affects, and the records. A question is answered from the records or the reference products (rule 4 below).
+5. **Update the execution plan:** the work plan and the registry show the new direction, order and dependencies.
+6. **Reply and end the turn,** in one to three plain lines: what changed and where it's running.
+
+With a delivery coordinator, the main chat reads state, classifies and routes the prompt to the current coordinator in one message (steps 1, 2 and 6); the coordinator does steps 3 to 5.
+
+## Parallel tracks
+
+Items that don't depend on each other don't wait in one queue. Running them as separate tracks is faster, and keeps the code modular: each piece is built and checked on its own, then integrated deliberately. Whenever triage or a review finds independent items, orchestrate them in parallel.
+
+- **Dispatch every ready item.** The coordinator keeps a dependency map in the registry/queue (`coordinate`); every item whose prerequisites are met is dispatched, not just the next in line.
+- **Isolate each track:** its own working copy and branch (for example a git worktree), its own worker and its own completion record.
+- **Prove it on its own first.** When a piece's architecture or approach is uncertain, build it as an independent proof of concept and validate it in isolation before it touches the main app.
+- **Integrate one at a time.** Tracks land serially, and the checks run again on the combined result. When two tracks touch the same files, the second to land is rebased onto the first and the combined result is validated (`stage-validation`).
+- **Clean up safely.** Before deleting a worktree, remove any shared dependency folder in it (such as a `node_modules` junction or link into another copy) non-recursively, so the deletion can't reach the copy it points to.
+- **Keep in sequence** what depends on another item's result, or what would rewrite the same code at the same time; parallel tracks need independence, not just urgency.
 
 ## Start: intent, mode, bounds
 
@@ -47,7 +82,7 @@ These are role boundaries, not an instruction for every worker to spawn more wor
 
 ## The loop
 
-Workers run the loop below. The coordinator dispatches increments, reads their evidence and routes the next work in short turns; it never stays busy waiting for the loop.
+Workers run the loop below. The coordinator dispatches increments, reads their evidence and routes the next work in short turns; it never stays busy waiting for the loop. Independent increments run as parallel tracks, each with its own loop.
 
 ```
 plan the next increment → act → check (the smallest check that covers it) → record → refresh the review build → review about every 30 minutes → adapt
@@ -97,14 +132,15 @@ Without a tool that can keep a process running, build the review checkout and gi
 | Decide which checks to run or what evidence a stage needs; run a build-check-fix loop; merge | `stage-validation` |
 | Refresh the review build after a validated increment or a stage close | `stage-validation` |
 | Pause after about 30 minutes of work, finish an interval, or notice progress stalling | `progress-review` |
-| Triage prompts, maintain the registry/queue, delegate, report, review, hand over or roll over | `coordinate` |
+| Triage prompts, maintain the registry/queue and its dependency map, route messages, delegate, report, review, hand over or roll over | `coordinate` |
+| Integrate parallel tracks or a proof of concept, and check the combined result | `stage-validation` |
 
 ## Rules that hold everywhere
 
 1. **Validated outcomes, not activity.** Each increment ends in something the owner can use, or something learned that changes a decision.
 2. **No premature foundations.** Build infrastructure, abstractions and hardening when the current goal needs them, not before the direction is validated.
 3. **Smallest check that covers the change.** Scope checks to what the change can affect; escalate for stated reasons.
-4. **Decide, don't ask, when you can.** Ask only what can't be decided from context. Otherwise choose the most reasonable option, write the assumption down, and keep going.
+4. **Decide, don't ask, when you can.** Ask only what can't be decided from context. Settle how something should behave from the project's declared **reference products** (a project fact; for example "the current Figma behaviour first, then Microsoft Word's") or its prior decisions: check their current official docs or the product itself, and record the source beside the decision. Ask the owner only for decisions that are theirs: irreversible actions, licences, publishing, real accounts, deleting their data. Otherwise choose the most reasonable option, write the assumption down, and keep going.
 5. **Evidence or it didn't happen.** Report what was checked and how, and say what wasn't.
 6. **Durable records.** Anything another session or agent needs is written down: the work plan, the progress log, the handoff. Memory doesn't survive.
 7. **Never take the owner's focus or data.** No focus-stealing windows, no restarting their running app or server without asking, no tests against their real data, accounts or remotes.
@@ -112,11 +148,14 @@ Without a tool that can keep a process running, build the review checkout and gi
 9. **Short sessions.** Hand over to a new session at the session limit rather than letting one run until it slows down; the records carry the work across, so nothing is lost.
 10. **The clock is mandatory.** Every session runs with the session clock, or keeps time by hand where the tool has no hooks. Act on every reminder, and never weaken the clock to keep working.
 11. **The owner can always try it.** A review build at the last validated commit is running and isolated from development, and every report says where it is.
-12. **Keep the coordinator free.** Read live state, route work, record and end the turn. Workers execute; the main chat never blocks on them.
+12. **Keep the main chat free.** It triages: read live state, route work, update the plan and end the turn. Coordinators route and verify, workers execute; the main chat never blocks on them, and hears from them only for owner decisions, something to try, or safety.
+13. **Parallel when independent.** Every ready item is dispatched to its own isolated track; tracks are integrated one at a time and checked again together.
 
 ## When tools differ
 
 This rule was learned in **VS Code agent sessions**: a chat running a tool did not process queued owner prompts or sub-chat messages until its turn ended, and hooks fired between turns. Long completion-file polls hid a successor's message and led to a duplicate writer. Hooks could not rescue the busy turn.
+
+Later sessions added more: coordinators and workers sent the main chat routine acknowledgements, milestones, dispatch and transfer notes in dense jargon until the owner said it was clogged; the main chat re-verified every delivery and ran watchers, which kept its turns busy; and a coordinator asked the owner how a behaviour should work when the reference products already answered it. What worked was the layered setup (main chat for triage only, one delivery coordinator, bounded workers), the quiet main chat, and independent items run as parallel tracks in their own worktrees.
 
 Other tools and versions may behave differently. The principle is portable: keep the owner-facing conversation available, with durable ownership and no blocking waits. Establish the tool's mechanism rather than assuming live input can interrupt a running turn:
 
@@ -147,4 +186,4 @@ Use what's there; fall back when it isn't:
 
 ## Project facts
 
-The installer adds an **Orchestration** section to the project's `AGENTS.md` with the facts these skills read: where product intent lives, the commands for each validation tier, the progress log's path, the work plan, the coordinator registry/queue and completion signals, branch and merge rules and what the agent may merge, push or deploy, what must never break, the review build (how to start and refresh it, and where it is), the review interval and the session limits. Each is optional; a skill proposes one when it's missing.
+The installer adds an **Orchestration** section to the project's `AGENTS.md` with the facts these skills read: where product intent lives, the reference products that settle how something should behave, the commands for each validation tier, the progress log's path, the work plan, the coordinator registry/queue and completion signals, branch and merge rules and what the agent may merge, push or deploy, what must never break, the review build (how to start and refresh it, and where it is), the review interval and the session limits. Each is optional; a skill proposes one when it's missing.

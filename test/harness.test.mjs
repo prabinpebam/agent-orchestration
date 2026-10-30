@@ -85,6 +85,92 @@ test('the free coordinator stays separate from execution in all skills and insta
   }
 });
 
+test('the main chat is for triage only: a busy main chat is a failure, and every prompt is triaged into the plan', () => {
+  const entry = read('skills', 'orchestrate', 'SKILL.md');
+  assert.match(entry, /## Keep the main chat free/);
+  assert.match(entry, /used only for triage; everything else is delegated/);
+  assert.match(entry, /If the main chat isn't ready for the owner's next input, that's a failure/);
+  assert.match(entry, /starts implementing in the main chat itself\. Messages from other chats then queue behind its turn and get stuck/);
+  assert.match(entry, /main chat \(triage only\) → one delivery coordinator → bounded workers/);
+  assert.match(entry, /never creates a second coordinator/);
+  assert.match(entry, /doesn't re-verify routine deliveries or run watchers/);
+  assert.match(entry, /## Triage every owner prompt/);
+  for (const kind of ['a new item', 'a change of direction for a running item', 'a priority change', 'a rule change', 'a question']) assert.ok(entry.includes(kind), `classifies ${kind}`);
+  for (const step of ['Read live state', 'Classify the input', 'Find the affected tracks', 'Steer, queue or launch', 'Update the execution plan', 'Reply and end the turn']) assert.ok(entry.includes(`**${step}`), step);
+  assert.match(entry, /one to three plain lines/);
+  assert.match(entry, /Answer each reminder in one line/);
+  const coordinate = read('skills', 'coordinate', 'SKILL.md');
+  for (const prompt of ['Priority change', 'Rule change', 'Question']) assert.ok(coordinate.includes(`| ${prompt} |`), prompt);
+  assert.match(coordinate, /answer each reminder in one line/);
+  const s = section(null);
+  assert.match(s, /Keep the main chat free/);
+  assert.match(s, /a main chat that isn't ready for the owner's next input is a failure/);
+  assert.match(s, /classifies the input \(a new item, a change of direction, a priority change, a rule change or a question\)/);
+  assert.match(s, /never creates a second one/);
+  assert.match(s, /answer each reminder in one line/);
+});
+
+test('sub-chats keep the main chat quiet: three reasons, three plain lines, no routine notes, retired coordinators ignored', () => {
+  const coordinate = read('skills', 'coordinate', 'SKILL.md');
+  assert.match(coordinate, /## Messages and the main chat/);
+  assert.match(coordinate, /1\. a decision only the owner can make;\n2\. something new ready for the owner to try[^\n]*;\n3\. a safety blocker/);
+  assert.match(coordinate, /\*\*at most 3 plain lines\*\*, with no IDs or jargon/);
+  assert.match(coordinate, /acknowledgements, milestones, dispatch notes, transfer notices, progress/);
+  assert.match(coordinate, /doesn't acknowledge stale or routine notes/);
+  assert.match(coordinate, /Messages from a retired coordinator are ignored/);
+  assert.match(coordinate, /Every worker assignment and every handoff carries it/);
+  assert.match(coordinate, /the main chat doesn't re-verify routine deliveries/);
+  for (const [name, text] of [['orchestrate', read('skills', 'orchestrate', 'SKILL.md')], ['section', section(null)], ['README', read('README.md')], ['AGENTS', read('AGENTS.md')]]) {
+    assert.match(text, /decision only the owner can make|owner-only decision/, `${name}: owner decisions`);
+    assert.match(text, /something new ready to try/, `${name}: something to try`);
+    assert.match(text, /safety blocker/, `${name}: safety blockers`);
+    assert.match(text, /at most 3 plain lines/, `${name}: three plain lines`);
+    assert.match(text, /retired coordinator/, `${name}: retired coordinators`);
+  }
+  for (const text of [read('templates', 'handoff.md'), read('templates', 'work-plan.md')]) assert.match(text, /at most 3 plain lines/);
+  assert.match(read('templates', 'handoff.md'), /retired coordinators: <IDs; their messages are ignored>/);
+});
+
+test('independent items run as parallel tracks, integrated one at a time and checked again together', () => {
+  const entry = read('skills', 'orchestrate', 'SKILL.md');
+  assert.match(entry, /## Parallel tracks/);
+  assert.match(entry, /don't depend on each other don't wait in one queue/);
+  assert.match(entry, /every item whose prerequisites are met is dispatched, not just the next in line/);
+  assert.match(entry, /its own working copy and branch \(for example a git worktree\), its own worker and its own completion record/);
+  assert.match(entry, /independent proof of concept and validate it in isolation/);
+  assert.match(entry, /second to land is rebased onto the first/);
+  assert.match(entry, /non-recursively/);
+  const coordinate = read('skills', 'coordinate', 'SKILL.md');
+  assert.match(coordinate, /\*\*The dependency map\.\*\*/);
+  assert.match(coordinate, /dispatch \*\*every ready item\*\*/);
+  assert.match(coordinate, /not just the next in line/);
+  const validation = read('skills', 'stage-validation', 'SKILL.md');
+  assert.match(validation, /## Integrating parallel tracks/);
+  assert.match(validation, /A proof of concept is validated in isolation/);
+  assert.match(validation, /run the checks again on the combined result/);
+  assert.match(validation, /second to land is rebased onto the first/);
+  assert.match(validation, /non-recursively: delete the link itself/);
+  for (const [name, text] of [['section', section(null)], ['README', read('README.md')], ['AGENTS', read('AGENTS.md')], ['work-plan template', read('templates', 'work-plan.md')]]) {
+    assert.match(text, /[Pp]arallel track/, `${name}: parallel tracks`);
+    assert.match(text, /dependency map/, `${name}: dependency map`);
+  }
+  for (const text of [read('skills', 'progress-review', 'SKILL.md'), read('agents', 'throughput-reviewer.agent.md')]) assert.match(text, /could run as parallel tracks/);
+});
+
+test('product-behaviour questions are settled from reference products, and only the owner\'s own decisions are asked', () => {
+  const entry = read('skills', 'orchestrate', 'SKILL.md');
+  assert.match(entry, /declared \*\*reference products\*\* \(a project fact; for example/);
+  assert.match(entry, /record the source beside the decision/);
+  assert.match(entry, /irreversible actions, licences, publishing, real accounts, deleting their data/);
+  for (const [name, text] of [['execution-modes', read('skills', 'execution-modes', 'SKILL.md')], ['coordinate', read('skills', 'coordinate', 'SKILL.md')], ['section', section(null)], ['README', read('README.md')]]) {
+    assert.match(text, /reference products/, `${name}: reference products`);
+  }
+  assert.match(section(null), /irreversible actions, licences, publishing, real accounts, deleting their data/);
+  assert.match(section(null), /- \*\*Reference products:\*\* <the products whose current behaviour settles/, 'the installed facts ask for them');
+  const once = withSection('# P\n\n<!-- agent-orchestration:start -->\n## Old\n\n### Project facts (fill in; the skills read these)\n\n- **Product intent:** docs/spec.md\n- **Reviews and escalation:** review every 30 minutes\n<!-- agent-orchestration:end -->\n');
+  assert.match(once, /- \*\*Reference products:\*\* </, 'an older install gains the fact');
+});
+
 test('the registry, prompt triage and event-driven completion prevent duplicate writers', () => {
   const coordinate = read('skills', 'coordinate', 'SKILL.md');
   for (const prompt of ['Same area as a running writer', 'Independent of running work', 'Depends on running work', 'Correction']) {

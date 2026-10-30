@@ -7,15 +7,16 @@ Resume with: read this file, then <the registry/queue, unread messages, live wor
 
 ## Ownership and queue
 - Registry/queue: <authoritative session-store location or ignored file accessible to the successor>
-- Coordinator: <current ID>; successor: <exactly one ID, or not yet created>; ownership transfer: <pending | complete>
+- Coordinator: <current ID>; successor: <exactly one ID, or not yet created>; ownership transfer: <pending | complete>; retired coordinators: <IDs; their messages are ignored>
 - Unread messages and completion records: <where to read them; completion route>
+- Messages to the main chat: only an owner decision, something new to try, or a safety blocker; at most 3 plain lines, no IDs or jargon. Everything else goes to the coordinator and the records.
 - Clock: <session ID; last review; elapsed minutes, calls and compactions; unchanged limits>
 
 | Task | Owner worker | Working copy | State | Trigger | Completion signal |
 |---|---|---|---|---|---|
-| <ID and objective> | <worker and continuation IDs> | <absolute path and branch> | <current state> | <exact prerequisite or ready> | <route or record; task/attempt ID and evidence> |
+| <ID and objective> | <worker and continuation IDs> | <absolute path and branch> | <current state> | <task IDs it depends on and the event that releases it, or ready> | <route or record; task/attempt ID and evidence> |
 
-Reconcile this snapshot with live state before dispatching. Adopt running workers; do not recreate them. One writer per working copy. Check pending messages and the live worker list before any continuation. The coordinator transfers its registry without waiting for workers; their clocks keep running. End the old coordinator turn, and explicitly mark its roll-over after transfer.
+Reconcile this snapshot with live state before dispatching. Adopt running workers; do not recreate them. Dispatch every ready item. One writer per working copy. Check pending messages and the live worker list before any continuation. The coordinator transfers its registry without waiting for workers; their clocks keep running. End the old coordinator turn, and explicitly mark its roll-over after transfer.
 
 ## Done (with evidence)
 - <what a person can do now> — <tests, runs, commits>

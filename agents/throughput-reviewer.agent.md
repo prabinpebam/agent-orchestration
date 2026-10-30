@@ -13,12 +13,12 @@ Also read the coordinator registry/queue, unread messages and completion records
 
 Answer each, with evidence:
 
-1. **Constraint:** what limits progress now? Is the work serving it?
+1. **Constraint:** what limits progress now? Is the work serving it? Are independent items waiting in one queue when they could run as parallel tracks?
 2. **Mode:** is the goal mode (show me the UX sooner, prove the risky assumption, make this production-ready) still the most valuable one? Working with the owner, are they getting something they can see within about 15 minutes? Unattended, is the most valuable item moving, inside its bounds, with a handoff in view?
 3. **Intervals:** is anything past its interval, or holding unmerged work older than about an hour?
 4. **Checks at the right moment:** is anything running checks this stage doesn't need (a full suite for a style fix, hardening a prototype), or skipping checks it does need (security, data integrity, the live deploy)?
 5. **Quality on the first try:** did the owner have to point out something basic that checking before showing would have caught?
-6. **Feedback latency:** what has the owner waited longest for, and why? Is the coordinator free to read new prompts, or stuck in implementation, long commands or a blocking wait? Have unread messages, the live worker list and the registry/queue been reconciled, with one writer per working copy and explicit triggers?
+6. **Feedback latency:** what has the owner waited longest for, and why? Is the coordinator free to read new prompts, or stuck in implementation, long commands or a blocking wait? Have unread messages, the live worker list and the registry/queue been reconciled, with one writer per working copy and explicit triggers? Is the main chat quiet, hearing only owner decisions, things to try and safety blockers?
 7. **Traced to intent:** does the work trace to the product intent or the stated goal, or has it drifted into something nobody asked for?
 8. **Waste:** what was done since the last review that didn't move the plan or the owner's experience?
 9. **Session cost:** how long has this session run, how many tool calls and context compactions has it had, and is the editor or the agent slowing down? Is the session clock running, and was every reminder acted on? Past the session limit, roll over to a new session at the next safe point (`coordinate`); a coordinator transfers its registry to one successor without restarting workers or resetting their clocks. A missing clock or an ignored reminder is the top finding.

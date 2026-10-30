@@ -2,7 +2,7 @@
 
 A project-agnostic harness for **how AI coding agents carry out work**: choosing an execution mode, running bounded loops with the owner present or away, checking at the depth each stage needs, reviewing progress about every 30 minutes, and changing course when progress stalls. Success is measured in useful, validated outcomes per unit of time, not in checklists completed or foundations laid early.
 
-The main chat stays a **free coordinator**: it reads new prompts and live worker state, routes and queues work, steers or stops workers, checks deliveries cheaply and reports in short turns. Workers implement and run builds, tests and long commands. No coordinator sleeps, polls, blocking waits or watchers that keep a turn busy.
+The main chat stays **free for triage**: it reads each new prompt and live state, routes it into the plan and replies in a few lines. A coordinator (the main chat itself for short work, its own chat for long or multi-track work) keeps the registry and dependency map, dispatches every ready item as a parallel track, steers or stops workers and verifies deliveries. Workers implement and run builds, tests and long commands. No sleeps, polls, blocking waits or watchers that keep a turn busy, and no routine chatter in the main chat.
 
 It's a set of **skills** (instructions an agent loads when they apply), one **agent** (a reviewer), **templates** and an installer with no dependencies. It works with GitHub Copilot (VS Code and CLI), Claude Code, Codex, and any agent that reads `AGENTS.md` or skill folders, without assuming they all offer the same capabilities.
 
@@ -12,11 +12,11 @@ It decides **how** to do the work, not **what** is worth building. It reads prod
 
 | Skill | Use it when | What it gives you |
 |---|---|---|
-| [`orchestrate`](skills/orchestrate/SKILL.md) | Starting multi-step work; triaging prompts; the owner is away | The free coordinator and worker roles, intent-mode-bounds start, execution loop, session clock, review build and tool-portability fallbacks |
+| [`orchestrate`](skills/orchestrate/SKILL.md) | Starting multi-step work; triaging prompts; the owner is away | The free main chat, coordinator and worker roles, the triage steps for every prompt, parallel tracks, intent-mode-bounds start, execution loop, session clock, review build and tool-portability fallbacks |
 | [`execution-modes`](skills/execution-modes/SKILL.md) | Choosing or switching how to run the work | Three goal modes and two attention modes: what each produces first, defers, proves, and when it ends |
-| [`stage-validation`](skills/stage-validation/SKILL.md) | Deciding which checks to run or what evidence a stage needs | Evidence by goal mode, validation tiers 0–3, the build-check-fix loop, refreshing the review build, blocked items, found on the way, ready to show, merging exactly what was tested |
+| [`stage-validation`](skills/stage-validation/SKILL.md) | Deciding which checks to run or what evidence a stage needs | Evidence by goal mode, validation tiers 0–3, the build-check-fix loop, integrating parallel tracks and proofs of concept, refreshing the review build, blocked items, found on the way, ready to show, merging exactly what was tested |
 | [`progress-review`](skills/progress-review/SKILL.md) | About every 30 minutes; at the end of an interval; when progress stalls | Nine questions (the last on the session's cost), stall signals, and how to change course |
-| [`coordinate`](skills/coordinate/SKILL.md) | Triaging prompts, queuing, delegating, logging, reporting, reviewing and handing over | The durable registry/queue, event-driven completion, duplicate prevention, records, bounded workers and single-successor roll-overs |
+| [`coordinate`](skills/coordinate/SKILL.md) | Triaging prompts, queuing, delegating, logging, reporting, reviewing and handing over | The durable registry/queue and dependency map, the quiet main chat, event-driven completion, duplicate prevention, records, bounded workers and single-successor roll-overs |
 
 | Agent | Job |
 |---|---|
@@ -52,13 +52,19 @@ Limits live in the hook configuration's `env`: `AO_REVIEW_MIN` (30), `AO_ROLLOVE
 
 `node .github/hooks/orchestration-clock.mjs status` shows the clock when the folder has one session. With multiple clocks, use `status --session <id>` or `mark review|rollover --session <id>`; an ambiguous command refuses to choose another session's clock. State is one small file per session in the system's temporary folder (or `AO_CLOCK_DIR`), never in the project; tool arguments are read only to recognise those commands. A broken hook prints `{}` and never stops work. For other tools, `orchestrate` gives the fallback, which is just as binding: compare the time with the last review and the session's start at every log line.
 
-## The coordinator and queue
+## The main chat, coordinator and queue
 
-At the start of every coordinator turn, read unread messages and completion records, the live worker list and the registry/queue. Triage every new prompt: same writer's area, steer it or queue its follow-up; independent work, launch an isolated worker; dependent work, queue with an explicit trigger; correction, steer or stop. **One writer per working copy, always**; a separate branch in a shared folder is not isolation.
+**The main chat is for triage only; everything else is delegated.** If it isn't ready for the owner's next input, that's a failure. The common failure in long runs: the agent starts implementing in the main chat, and messages from other chats queue behind its turn and get stuck. For long or multi-track work, run **main chat (triage only) → one delivery coordinator → bounded workers**. The main chat routes new direction to the current coordinator, found from the registry, and never creates a second one; the coordinator owns verification, so the main chat doesn't re-check routine deliveries.
 
-Keep a durable registry in the session's own store or an ignored file: **task, owner worker, working copy, state, trigger, completion signal**, plus coordinator/successor IDs. Workers report by message, completion record or both. The coordinator checks evidence and updates the queue at turn boundaries, never in a waiting loop. Before any worker or continuation is created, check pending messages and live workers for an existing owner or successor. Record uncertain launches and reconcile them rather than retrying.
+Every owner prompt: read live state (unread messages, completion records, the live worker list and the registry/queue); classify it (a new item, a change of direction, a priority change, a rule change, or a question); find the affected tracks; steer, queue or launch; update the execution plan; reply in one to three lines and end the turn. Same writer's area, steer it or queue its follow-up; independent work, launch an isolated worker; dependent work, queue with an explicit trigger; correction, steer or stop. **One writer per working copy, always**; a separate branch in a shared folder is not isolation. How something should behave is settled from the project's **reference products** or prior decisions, with the source recorded; the owner is asked only for their own decisions (irreversible actions, licences, publishing, real accounts, deleting their data).
 
-**Ending a coordinator turn is not completion.** The owner's task is done only when every dispatched part has verified evidence. Never mark it complete to silence automated keep-working reminders while workers or queued items remain. Where the host can't idle with work pending, state that limitation and use its supported continuation.
+**A quiet main chat.** Sub-chats message it only for a decision only the owner can make, something new ready to try, or a safety blocker: at most 3 plain lines, no IDs or jargon. Acknowledgements, milestones, dispatch and transfer notes go to the coordinator and the records. The main chat ignores stale and routine notes (one short line when a reply can't be avoided) and anything from a retired coordinator. Every assignment and handoff carries the rule.
+
+**Parallel tracks.** Independent items don't wait in one queue. The registry's triggers are a dependency map, and the coordinator dispatches every ready item, each with its own worktree and branch, worker and completion record. An uncertain piece is built first as an isolated proof of concept. Tracks are integrated one at a time with the checks run again on the combined result; when two touch the same files, the second to land is rebased onto the first. Shared dependency links in a worktree (such as a `node_modules` junction) are removed non-recursively before the worktree is deleted.
+
+Keep a durable registry in the session's own store or an ignored file: **task, owner worker, working copy, state, trigger, completion signal**, plus coordinator/successor IDs and retired coordinators. Workers report to their coordinator by message, completion record or both. The coordinator checks evidence and updates the queue at turn boundaries, never in a waiting loop. Before any worker or continuation is created, check pending messages and live workers for an existing owner or successor. Record uncertain launches and reconcile them rather than retrying.
+
+**Ending a coordinator turn is not completion.** The owner's task is done only when every dispatched part has verified evidence. Never mark it complete to silence automated keep-working reminders while workers or queued items remain; answer each reminder in one line. Where the host can't idle with work pending, state that limitation and use its supported continuation.
 
 ## The review build
 
@@ -97,7 +103,7 @@ git clone https://github.com/prabinpebam/agent-orchestration.git
 node agent-orchestration/tools/install.mjs path/to/your-project
 ```
 
-That copies the skills and the agent where each coding agent looks for them, installs the session clock's hooks for Copilot (an existing hook configuration is kept, with its limits), and adds an **Orchestration** section to the project's `AGENTS.md` (and `CLAUDE.md`, when there is one) with the project facts the skills read: where product intent lives, the work plan, the commands for each validation tier, the progress log, the coordinator registry/queue and completion signals, branch and merge rules (including whether the agent may merge, push or deploy), the review build, the review interval and the session limits. Fill those in. Run it again any time to update; your filled-in facts are kept (a fact added to the harness since appears as its placeholder, to fill in), and other sections of `AGENTS.md` are left alone.
+That copies the skills and the agent where each coding agent looks for them, installs the session clock's hooks for Copilot (an existing hook configuration is kept, with its limits), and adds an **Orchestration** section to the project's `AGENTS.md` (and `CLAUDE.md`, when there is one) with the project facts the skills read: where product intent lives, the reference products that settle how something should behave, the work plan, the commands for each validation tier, the progress log, the coordinator registry/queue and completion signals, branch and merge rules (including whether the agent may merge, push or deploy), the review build, the review interval and the session limits. Fill those in. Run it again any time to update; your filled-in facts are kept (a fact added to the harness since appears as its placeholder, to fill in), and other sections of `AGENTS.md` are left alone.
 
 Options:
 
@@ -120,7 +126,7 @@ Without `--for`, it installs for Copilot, plus Claude Code when the project has 
 
 ### Tool portability
 
-This was learned in **VS Code agent sessions**: a chat running a tool did not read queued prompts or sub-chat messages until its turn ended, and hooks fired between turns. Long completion-file polls hid a successor's message and caused a duplicate writer. Other tools may behave differently; preserve availability and ownership rather than hard-coding that mechanism.
+This was learned in **VS Code agent sessions**: a chat running a tool did not read queued prompts or sub-chat messages until its turn ended, and hooks fired between turns. Long completion-file polls hid a successor's message and caused a duplicate writer. Later sessions showed routine sub-chat messages clogging the main chat, the main chat re-verifying every delivery, and a coordinator asking the owner what the reference products already answered; the layered setup, the quiet main chat and parallel tracks fixed them. Other tools may behave differently; preserve availability and ownership rather than hard-coding that mechanism.
 
 Check each tool or IDE:
 

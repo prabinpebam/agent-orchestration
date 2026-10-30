@@ -1,6 +1,6 @@
 ---
 name: stage-validation
-description: Use when deciding which checks to run, what evidence a stage or change needs, running a build-check-fix loop, merging, or deciding whether something is ready to show. Evidence matched to the goal mode, validation tiers scoped to the change, blocked items, found-on-the-way issues, merging exactly what was tested, and refreshing the owner's review build from validated commits only.
+description: Use when deciding which checks to run, what evidence a stage or change needs, running a build-check-fix loop, integrating parallel tracks or a proof of concept, merging, or deciding whether something is ready to show. Evidence matched to the goal mode, validation tiers scoped to the change, serial integration with the checks run again on the combined result, blocked items, found-on-the-way issues, merging exactly what was tested, and refreshing the owner's review build from validated commits only.
 ---
 
 # Stage validation: the right checks at the right time
@@ -48,6 +48,17 @@ For each increment:
 6. **Merge** what's proven, as far as the bounds allow, and hand over with its Try it.
 7. **Refresh the review build** to the validated commit (below).
 
+## Integrating parallel tracks
+
+Independent tracks and proofs of concept are validated on their own first (`orchestrate`), then brought together one at a time. Passing alone doesn't prove they pass together.
+
+- **Each track proves itself first,** on its own branch and working copy, with the checks its change needs.
+- **A proof of concept is validated in isolation** against its criterion, then integrated as its own step: brought to the production bar (below) before it's merged into the main app, never merged straight in because it passed alone.
+- **Land one at a time.** After each track lands, run the checks again on the combined result: the related tests and type check of every track that has landed, the end-to-end tests their changes affect, and tier 3 when a trigger holds. Merge exactly what the combined checks passed.
+- **Overlapping tracks:** when two tracks touch the same files, the second to land is rebased onto the first, in its own working copy; its own checks and the combined checks run again before it lands.
+- **A combined failure** goes back to the track that landed last; the main branch stays at the last combined result that passed.
+- **Clean up safely.** Before deleting a track's worktree, remove any shared dependency folder in it (such as a `node_modules` junction or link into another copy) non-recursively: delete the link itself (`rmdir` on a Windows junction, `rm` without `-r` on a symbolic link), never its contents, then remove the worktree.
+
 ## The review build
 
 The owner's always-running build for trying the work (`orchestrate`). It moves forward only on evidence:
@@ -79,5 +90,5 @@ Before showing the owner anything visual, check the basics for what's being show
 - **Merge exactly what was tested** (fast-forward).
 - Merging into the main branch, pushing and deploying are separate permissions, each a project fact or a bound; none is assumed. Where they're allowed, do them and watch the deploy and its checks until they pass. What's live must never break; if it does, fix forward or revert at once.
 - Where they aren't allowed, or the project has no remote or deploy (a library, a local tool), stop at "validated and ready to merge" or "ready to release", and put the exact owner action in the handoff: which branch or commit, the command, and what to watch.
-- Experiments stay on their own branches; they reach the product only after being rebuilt to the production bar.
+- Experiments and proofs of concept stay on their own branches; they reach the product only after being rebuilt to the production bar and checked on the combined result (above).
 - Never take the owner's focus: launch apps and tests in the background, never restart their running app or server without asking, and keep tests away from their real data, accounts and remotes (use fixtures and fakes).

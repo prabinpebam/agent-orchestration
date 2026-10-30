@@ -1,6 +1,6 @@
 {
   "name": "agent-orchestration",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A project-agnostic harness for how AI coding agents carry out work: execution modes, attended and unattended loops, stage-appropriate validation, periodic progress reviews, progress logs, delegation and handoffs.",
   "type": "module",
   "license": "MIT",

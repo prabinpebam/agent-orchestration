@@ -9,7 +9,7 @@ A mode is a **goal** plus an **attention** level. The goal says what kind of res
 
 ## Roles in every mode
 
-The main chat stays a **free coordinator** (`orchestrate`, `coordinate`). It reads live state, routes each prompt, queues dependencies, steers workers and ends its turn. Workers implement and run checks. Neither attention mode permits coordinator implementation, long commands, sleeps, polling loops or blocking waits. The intervals below bound worker execution, not coordinator turn length; both roles keep the same session clock limits.
+The main chat stays free for triage, and the **coordinator** routes the work (`orchestrate`, `coordinate`). They read live state, route each prompt, queue dependencies, dispatch every ready item as a parallel track, steer workers and end their turns. Workers implement and run checks. Neither attention mode permits coordinator implementation, long commands, sleeps, polling loops or blocking waits. The intervals below bound worker execution, not coordinator turn length; both roles keep the same session clock limits.
 
 ## Goal modes
 
@@ -29,7 +29,7 @@ Run the smallest experiment that settles one uncertainty, product or technical, 
 
 - **Before starting:** state the belief, the result that would confirm or refute it, and what changes in the plan for each outcome. If no result would change anything, it isn't worth testing.
 - **First:** the cheapest experiment that could give that result: a spike, a prototype, a benchmark, a call to the real service, or a short script for watching a person try it.
-- **Bound it:** usually one 45-minute interval, on a throwaway branch. Experiment code isn't merged into the product unless it's rebuilt to the production bar.
+- **Bound it:** usually one 45-minute interval, on a throwaway branch in its own working copy, as a parallel track when other work can go on (`orchestrate`). Experiment code isn't merged into the product unless it's rebuilt to the production bar and checked on the combined result (`stage-validation`).
 - **Evidence:** the result against the criterion, with the run, the numbers or the observation, recorded against the assumption's ID where the product intent tracks it (A1), or against a hypothesis in the work plan (H1) when there's no product intent.
 - **Ends when:** the result is in, or the time is up (record "inconclusive", what was learned and the next cheapest test). Then return to the plan with the decision it changes.
 
@@ -59,7 +59,7 @@ The owner is collaborating: trying things, giving feedback, deciding.
 - Before showing each increment, only the fast checks, 5 minutes or less: the unit tests the change touches and the one end-to-end test that covers it. No full suite or benchmark between the owner and the next thing they'll see.
 - Tier-3 triggers (`stage-validation`) still hold: when the change touches a release, dependencies, shared infrastructure, or the production or security path, run those broad checks before it's merged or released, in the background while the owner reviews when the tool allows, otherwise at the end of the session.
 - Ship where they'll see it, and say exactly what to reopen or reload.
-- Triage new feedback against live state (`coordinate`): steer the current writer or queue its follow-up; start independent work in an isolated copy; queue dependencies with triggers; steer or stop for corrections. Ask only what can't be decided; offer choices with a recommendation first.
+- Triage new feedback against live state (`orchestrate`, `coordinate`): steer the current writer or queue its follow-up; start independent work in an isolated copy; queue dependencies with triggers; steer or stop for corrections; update the plan and reply in one to three lines. Settle how something should behave from the reference products or prior decisions, and record the source. Ask only what's the owner's to decide; offer choices with a recommendation first.
 
 ### Keep going unattended
 
@@ -67,7 +67,7 @@ The owner is away. Continue within explicit bounds.
 
 - **Bounds first:** time (when to stop), scope (which goal, which items), what never to touch, what to escalate. Use theirs; otherwise write reasonable ones at the top of the work plan.
 - **Intervals:** work in **45-minute intervals**, each ending in what works merged into the work branch, or a recorded checkpoint.
-- **Decide, don't ask.** Resolve ambiguity with the most reasonable option, write it in the work plan's decisions as a working default (W1), and keep going. W1 records execution choices; a product question the intent already lists (O1) is cited with the working default used, not copied, and a new product question goes in the handoff's changes to the intent.
-- **Escalate only when needed:** something only the owner can provide (an account, a credential, a decision with lasting consequences), or something irreversible, public or costly. Record it with the options and a recommendation, then continue with everything that isn't blocked.
+- **Decide, don't ask.** Resolve ambiguity with the most reasonable option, write it in the work plan's decisions as a working default (W1), and keep going. How something should behave is settled from the project's reference products or prior decisions, with the source recorded, not asked. W1 records execution choices; a product question the intent already lists (O1) is cited with the working default used, not copied, and a new product question goes in the handoff's changes to the intent.
+- **Escalate only when needed:** something only the owner can provide or decide (an account, a credential, a licence, publishing, deleting their data, a decision with lasting consequences), or something irreversible, public or costly. Record it with the options and a recommendation, then continue with everything that isn't blocked.
 - Run the broad checks before merging risky changes, review progress about every 30 minutes, and keep the log current.
 - **End with a handoff** (`coordinate`).
