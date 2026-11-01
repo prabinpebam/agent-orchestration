@@ -24,6 +24,15 @@ How an agent carries out work: which mode, which checks, how progress is recorde
 - **The owner's review is the test.** Get the design in front of them (the review build, with a Try it) and wait for their verdict. After sign-off, run the checks the change needs (`stage-validation`).
 - **A violation is the top finding** of every progress review (`progress-review`, `throughput-reviewer`). Stop the run at once, record it, and don't count its results as progress.
 
+## MANDATORY: handing over is not completion
+
+**Extremely strict. No exceptions.** The owner shouldn't have to say this twice.
+
+- **Delegating, dispatching, routing or handing over is NOT completion.** Never call the task-completion tool, never write "Task completed", "Done" or "Completed", and never show a completion summary when the work has only been handed to a worker or coordinator, or is still running, queued or unverified.
+- **Label a hand-over reply as a hand-over.** A triage reply for handed-over work starts "Handed over: …" or "In progress: …", says who has it and how the owner will hear back, and ends the turn without a completion signal.
+- **"Complete" is only for an outcome the owner can see, verified:** an app open and responding, a commit pushed and seen on the remote, an answer given. Nothing else earns it.
+- This is "Yielding is not finishing" (below), stated plainly for every triage reply, not only for keep-working reminders.
+
 ## Keep the main chat free
 
 The **main chat** is where the owner talks to the agent. It's used only for triage; everything else is delegated. **If the main chat isn't ready for the owner's next input, that's a failure**, however well the rest is going.
@@ -43,7 +52,7 @@ The rules:
 - **Event-driven completion.** Workers report by message, a completion record, or both. Read reports at turn boundaries, never wait for them in a loop. The coordinator owns verification: a cheap delivery check reads evidence, and a build or test needed to verify it goes to a worker. With a delivery coordinator, the main chat doesn't re-verify routine deliveries or run watchers.
 - **A quiet main chat.** Sub-chats message the main chat only for a decision only the owner can make, something new ready to try, or a safety blocker: at most 3 plain lines, no IDs or jargon. Routine acknowledgements, milestones, dispatch notes and transfer notices go to the coordinator and the records. The main chat doesn't acknowledge stale or routine notes, and ignores messages from a retired coordinator (`coordinate`).
 - **One coordinator at a time.** The main chat routes new owner direction to the current coordinator, found from the registry. It never creates a second coordinator.
-- **Yielding is not finishing.** Ending a coordinator turn returns control to the owner; it doesn't complete the owner's task. While dispatched or queued work remains, never call a task-completion action or report done just to silence automated keep-working reminders. Answer each reminder in one line: what's running and how it will report. If the host can't idle with work pending, state that limitation and use its supported continuation; don't promise behavior it lacks.
+- **Yielding is not finishing.** Ending a coordinator turn returns control to the owner; it doesn't complete the owner's task. While dispatched or queued work remains, never call a task-completion action or report done just to silence automated keep-working reminders, and never in a triage reply either: label it "Handed over: …" or "In progress: …" (the MANDATORY rule above). Answer each reminder in one line: what's running and how it will report. If the host can't idle with work pending, state that limitation and use its supported continuation; don't promise behavior it lacks.
 - **The role survives the session.** The coordinator has the same clock limits as workers. At its limit, transfer the registry to one fresh coordinator, which adopts running workers and keeps orchestrating. Don't wait for workers to finish, recreate them, or reset their clocks.
 
 These are role boundaries, not an instruction for every worker to spawn more workers. A bounded worker carries out its own assignment.
@@ -151,6 +160,8 @@ Without a tool that can keep a process running, build the review checkout and gi
 ## Rules that hold everywhere
 
 **MANDATORY, above every rule below, no exceptions:** NEVER run the full test suite or any unnecessary test on an unapproved design, and NEVER run the full test suite in "show me the UX sooner" mode. Before the owner explicitly signs off on the UX and UI, only the build, the type check and the project's static check of view documents run (see "MANDATORY: no tests on unapproved designs" above).
+
+**MANDATORY, no exceptions: handing over is not completion.** Delegating, dispatching, routing or handing over never earns the task-completion tool, the words "Task completed", "Done" or "Completed", or a completion summary. A reply for handed-over work says "Handed over: …" or "In progress: …", who has it and how the owner will hear back, and ends the turn. "Complete" is only for a verified outcome the owner can see (see "MANDATORY: handing over is not completion" above).
 
 1. **Validated outcomes, not activity.** Each increment ends in something the owner can use, or something learned that changes a decision.
 2. **No premature foundations.** Build infrastructure, abstractions and hardening when the current goal needs them, not before the direction is validated.

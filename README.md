@@ -75,6 +75,8 @@ Keep a durable registry in the session's own store or an ignored file: **task, o
 
 **Ending a coordinator turn is not completion.** The owner's task is done only when every dispatched part has verified evidence. Never mark it complete to silence automated keep-working reminders while workers or queued items remain; answer each reminder in one line. Where the host can't idle with work pending, state that limitation and use its supported continuation.
 
+**MANDATORY: handing over is not completion.** Delegating, dispatching, routing or handing over is NOT completion. Never call the task-completion tool, never write "Task completed", "Done" or "Completed", and never show a completion summary when the work has only been handed to a worker or coordinator, or is still running, queued or unverified. A triage reply for handed-over work says "Handed over: …" or "In progress: …", who has it and how the owner will hear back. "Complete" is only for a verified outcome the owner can see: an app open and responding, a commit pushed and seen on the remote, an answer given.
+
 ## The review build
 
 The owner reviews when they choose, not when the agent stops. So a **review build** is always built, running and ready to try: a local site or a stable build of the app, at the **last validated commit**, isolated from development so the owner can give early input and change course without disturbing the work, and without the work breaking what they're looking at.

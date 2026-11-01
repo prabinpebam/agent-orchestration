@@ -85,6 +85,33 @@ test('MANDATORY: no full or unnecessary tests on unapproved designs, and no full
   assert.match(entry.slice(entry.indexOf('## Rules that hold everywhere')), /^\*\*MANDATORY, above every rule below, no exceptions:\*\*/m);
 });
 
+test('MANDATORY: handing over is not completion, and hand-over replies are labelled as such', () => {
+  const carriers = {
+    orchestrate: read('skills', 'orchestrate', 'SKILL.md'),
+    coordinate: read('skills', 'coordinate', 'SKILL.md'),
+    'progress-review': read('skills', 'progress-review', 'SKILL.md'),
+    'throughput-reviewer': read('agents', 'throughput-reviewer.agent.md'),
+    README: read('README.md'),
+    section: section(null),
+  };
+  for (const [name, text] of Object.entries(carriers)) {
+    assert.match(text, /MANDATORY/, `${name} says MANDATORY`);
+    assert.match(text, /task-completion tool/, `${name}: names the task-completion tool`);
+    assert.match(text, /"Task completed", "Done" or "Completed"/, `${name}: names the forbidden words`);
+    assert.match(text, /handed over|handed to a worker or coordinator/i, `${name}: hand-over`);
+  }
+  for (const name of ['orchestrate', 'coordinate', 'README', 'section']) {
+    assert.match(carriers[name], /Delegating, dispatching, routing or handing over (is NOT completion|never earns)/, `${name}: delegating is not completion`);
+    assert.match(carriers[name], /"Handed over: …"/, `${name}: the hand-over label`);
+    assert.match(carriers[name], /an app open and responding, a commit pushed and seen on the remote, an answer given/, `${name}: what complete means`);
+  }
+  const entry = carriers.orchestrate;
+  assert.ok(entry.indexOf('## MANDATORY: handing over is not completion') < entry.indexOf('## Keep the main chat free'), 'near the top of orchestrate');
+  assert.match(entry.slice(entry.indexOf('## Rules that hold everywhere')), /^\*\*MANDATORY, no exceptions: handing over is not completion\.\*\*/m);
+  assert.match(entry, /\*\*Yielding is not finishing\.\*\*/, 'the existing rule stays');
+  assert.match(carriers['throughput-reviewer'], /MANDATORY-rule violation: handing over is not completion/);
+});
+
 test('the free coordinator stays separate from execution in all skills and installed instructions', () => {
   for (const [name, text] of [
     ...SKILLS.map((s) => [s, read('skills', s, 'SKILL.md')]),

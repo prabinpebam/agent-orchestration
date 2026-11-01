@@ -50,6 +50,8 @@ The coordinator reads reports at the start of each turn, verifies deliveries che
 
 **Ending a turn is not completion.** The owner's task is done only when every dispatched part has verified evidence. While workers or queued items remain, never call a task-completion action, or claim done, to silence automated keep-working reminders; answer each reminder in one line with the running work and its completion route. Where the host can't idle with work pending, state that limitation and use its supported continuation.
 
+**MANDATORY, no exceptions: handing over is not completion.** Delegating, dispatching, routing or handing over is NOT completion. Never call the task-completion tool, never write "Task completed", "Done" or "Completed", and never show a completion summary when the work has only been handed to a worker or coordinator, or is still running, queued or unverified. A triage reply for handed-over work is labelled as such ("Handed over: …", "In progress: …"), says who has it and how the owner will hear back, and ends the turn without a completion signal. "Complete" is only for an outcome the owner can see and that has been verified: an app open and responding, a commit pushed and seen on the remote, an answer given. A worker reports "done" for its own verified assignment; the coordinator and the main chat don't turn that into "complete" for the owner until the owner-visible outcome is verified.
+
 ## Messages and the main chat
 
 The main chat is for the owner. Keep it quiet so it's always ready for their next input.
