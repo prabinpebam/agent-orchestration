@@ -1,134 +1,52 @@
 ---
 name: coordinate
-description: Use when triaging owner prompts against live workers, maintaining the coordinator registry, queue and dependency map, routing messages between chats, delegating, preventing duplicate writers, reporting status, keeping progress records, handing over or rolling over. Event-driven completion, short coordinator turns, a quiet main chat, parallel dispatch of every ready item, bounded workers, durable handoffs and reports that say where the review build is.
+description: Use when keeping the coordinator registry and dependency map, dispatching ready items to workers, routing messages between chats, preventing duplicate writers, reporting to the owner, keeping the progress log, writing handoffs, or rolling a coordinator or worker over. Short event-driven coordinator turns, one long-lived coordinator, a quiet main chat, bounded workers and durable records.
 ---
 
-# Coordinate: records, reviews, delegation and handoffs
+# Coordinate
 
-Work that isn't written down can't be resumed, reviewed or trusted. Keep the records current as you go rather than reconstructing them at the end. The main chat triages; the coordinator owns the records, routing and verification. For short work they're the same chat; for long-running or multi-track work the coordinator runs in its own chat, and workers report to it (`orchestrate`).
+## Pre-action checklist (MANDATORY)
 
-## The records
+1. Am I about to build, test, wait or poll in this turn? → Dispatch it to a worker and end the turn.
+2. Does another worker or a successor already own this item or working copy? → Route to it; never start a second writer.
+3. Is the chat I'm routing to stale (no action in 30 minutes, no acknowledgement)? → Mark it stale in the registry and start a fresh one.
+4. Am I about to tell the owner something that isn't a decision, something to try or a safety blocker? → Put it in the records instead.
+5. Is a worker's "done" unverified (no commit seen, no build opened)? → It's "in progress" until verified.
 
-| Record | What it holds | Where |
-|---|---|---|
-| **Work plan** | The intent (or its IDs), the mode and bounds, the increments in order with their checks and state, decisions taken as working defaults, shortcuts, found on the way | A project fact; start from `templates/work-plan.md` of this harness |
-| **Progress log** | One timestamped line per meaningful step | Outside the repository, so it never lands in a commit (a project fact). When the agent can't write outside the workspace: an ignored folder inside it, such as `.agent-orchestration/`, listed in `.gitignore`, recorded as the fact |
-| **Handoff** | What's done with evidence, what's in progress, what waits on the owner, what to try first, what wasn't checked | At the end of every unattended stretch or session; from `templates/handoff.md` |
-| **Registry/queue** | Each task's owner worker, working copy, state, trigger (its dependencies) and completion signal, which together are the dependency map; the current coordinator, its successor and any retired coordinators | The session's own durable store, accessible to a successor, or an ignored file; record the location as a project fact and in the handoff |
+## Records
 
-Read all four before starting work in a new session. They are the memory. Keep one authoritative registry, not competing copies in plans and chats.
+| Record | Holds | Size |
+| --- | --- | --- |
+| Registry (one, owned by the coordinator) | One row per task, and the dependency map | Current rows only; archive closed ones |
+| Work plan | What's next, in order, with triggers | The project's own |
+| Progress log | One line per step | Append only |
+| Handoff | What a successor needs to resume | One page |
 
-## Every coordinator turn
+Registry row: `| Task | Owner worker | Working copy | State | Trigger | Completion signal |`. The first lines name the current coordinator and the owner's main chat.
 
-First read **unread messages and completion records, the live worker list, and the registry/queue**. Reconcile ownership and state, including any successor already created, before routing every new owner prompt (the triage steps are in `orchestrate`):
+Log line: `2026-01-31 14:05 [mode · attention] <item>: <what happened, in words> (<commit or evidence>)`. More words than codes. Workers end with `done:` or `blocked:` and the checks they ran.
 
-| Prompt | Action |
-|---|---|
-| Same area as a running writer | Steer that worker, or queue a follow-up for it |
-| Independent of running work | Start a parallel worker in an isolated worktree or other working copy, with its own branch |
-| Depends on running work | Queue it with an explicit trigger, such as a named task's validated commit |
-| Correction | Steer or stop the worker; wait for its stop acknowledgement by event before reassigning its working copy |
-| Priority change | Reorder the queue; steer running workers only when the change affects them |
-| Rule change | Send it to every live coordinator and worker it affects, and record it in the work plan and the next handoff |
-| Question | Answer from the records; settle product behaviour from the reference products or prior decisions (`orchestrate`); ask the owner only what's theirs to decide |
+## The coordinator's turn
 
-Then update the work plan and the registry so the plan includes the new direction.
+1. Read unread messages, completion records and live workers.
+2. Update the registry: states, stale chats, the dependency map.
+3. Verify each reported completion: the commit is on the remote, the review build shows it.
+4. Dispatch every ready item, each with its own worker, working copy and brief ([the loop](../orchestrate/SKILL.md#the-loop)). Check for an existing owner first.
+5. End the turn. No sleeps, polling loops or watchers; completions arrive as messages.
 
-**One writer per working copy, always.** Before creating any worker or continuation, check pending messages and the live worker list again if state may have changed. Record a launch as pending before dispatch, then record its worker ID. An uncertain launch or missing reply is not permission to retry: reconcile it first. If duplicates exist, steer or stop the extra worker and record the sole owner before more writes.
+## Messages
 
-Each registry row has:
+- **To the owner's main chat only**, and only: a decision only the owner can make, something new ready to try, or a safety blocker. At most 3 plain lines, no IDs, codes or jargon.
+- Everything else (acknowledgements, milestones, dispatch and transfer notes) goes to the coordinator and the records. Every brief and handoff carries this rule.
+- New direction from the owner goes to the current coordinator named in the registry; never create a second one.
 
-| Task | Owner worker | Working copy | State | Trigger | Completion signal |
-|---|---|---|---|---|---|
-| <stable task ID and bounded objective> | <worker ID; predecessor/successor when handed over> | <absolute path and branch> | <queued, launching, running, stopping, blocked, done> | <the task IDs it depends on and the event that releases it, or "ready"> | <message route and/or record path, task/attempt ID, evidence required> |
+## Rolling over
 
-**The dependency map.** The Trigger column is the dependency map: every queued item names what it waits for, or is ready. At each turn, and whenever a report releases a trigger, dispatch **every ready item**, each to its own working copy, branch, worker and completion record, not just the next in line (`orchestrate`'s parallel tracks). Note in each objective which files or areas the track touches, so overlapping tracks land one at a time (`stage-validation`).
+- **The owner's main chat never rolls over.** Its conversation stays in one place; reports always go back to it.
+- **One long-lived coordinator.** It hands over only at its context limits (tool calls or compactions), never on elapsed time alone, and never while the owner is steering. Handing over: write the handoff, transfer the registry to one fresh coordinator, record the new owner in the registry, then mark the roll-over. Workers keep running; their clocks aren't reset.
+- **Workers** roll over at the next safe point: commit the verified work, write the handoff with where the review build is, log a line, start the successor with the same role, mode and bounds, then mark the roll-over.
+- Before creating any successor, check for one already created. A worker launch is not a roll-over.
 
-Workers report completion or a blocker to the coordinator that owns them, by **message, a completion record, or both**, with task/attempt ID, state, commit or artifact, checks and limitations. Only the coordinator updates its registry; workers own their completion records. Match a report to the current owner/attempt before marking done or releasing dependent work; a stale or duplicate report cannot release the queue twice.
+## Handoff
 
-The coordinator reads reports at the start of each turn, verifies deliveries cheaply, updates the queue and ends the turn. Verification is the coordinator's: with a delivery coordinator, the main chat doesn't re-verify routine deliveries. **Never wait in a loop**, sleep, poll or run a watcher to hold the conversation open. If messaging is absent, workers write records and the coordinator checks them at the start of each turn. If nothing can wake the coordinator, ask the owner to re-prompt; use `orchestrate`'s single-threaded fallback rather than pretending the chat remains responsive during long work.
-
-**Ending a turn is not completion.** The owner's task is done only when every dispatched part has verified evidence. While workers or queued items remain, never call a task-completion action, or claim done, to silence automated keep-working reminders; answer each reminder in one line with the running work and its completion route. Where the host can't idle with work pending, state that limitation and use its supported continuation.
-
-**MANDATORY, no exceptions: handing over is not completion.** Delegating, dispatching, routing or handing over is NOT completion. Never call the task-completion tool, never write "Task completed", "Done" or "Completed", and never show a completion summary when the work has only been handed to a worker or coordinator, or is still running, queued or unverified. A triage reply for handed-over work is labelled as such ("Handed over: …", "In progress: …"), says who has it and how the owner will hear back, and ends the turn without a completion signal. "Complete" is only for an outcome the owner can see and that has been verified: an app open and responding, a commit pushed and seen on the remote, an answer given. A worker reports "done" for its own verified assignment; the coordinator and the main chat don't turn that into "complete" for the owner until the owner-visible outcome is verified.
-
-## Messages and the main chat
-
-The main chat is for the owner. Keep it quiet so it's always ready for their next input.
-
-**Sub-chats message the main chat only for:**
-
-1. a decision only the owner can make;
-2. something new ready for the owner to try: a build running and ready, or the finished result they asked for;
-3. a safety blocker: their data, accounts, secrets or something irreversible at risk.
-
-Each message is **at most 3 plain lines**, with no IDs or jargon: what happened, what the owner can do, what happens next. Everything else (acknowledgements, milestones, dispatch notes, transfer notices, progress) goes to the coordinator that owns the work, the registry, completion records and the progress log.
-
-- **The main chat doesn't acknowledge stale or routine notes.** It ignores them, or gives one short line when a reply can't be avoided, and ends the turn.
-- **Messages from a retired coordinator are ignored.** The registry names the current coordinator; a retired one's notes change nothing.
-- **New owner direction goes to the current coordinator,** found from the registry, in one message. The main chat never creates a second coordinator; it creates one only when the registry has none live and no successor, after checking the live chats.
-- **The rule travels.** Every worker assignment and every handoff carries it, so a successor or new worker never has to relearn it.
-
-## Log and status
-
-### Progress log lines
-
-`YYYY-MM-DD HH:MM [goal · attention] <item>: <what happened>; <evidence>; <next>`
-
-Goal tags: `ux-sooner`, `prove-assumption`, `production-ready`. Attention tags: `with-me`, `unattended`. Items are the work plan's IDs (I1 increments, H1 hypotheses, W1 working defaults), with the product IDs they serve in brackets when there's product intent.
-
-```
-2026-01-31 14:05 [production-ready · unattended] I3 (3.2) setup flow: builds; unit 42 pass, e2e "first run" 3/3; merging
-2026-01-31 14:30 [production-ready · unattended] review: adjust; full suite queued twice for copy fixes, back to tier 1
-```
-
-### Status
-
-The work plan ends with a status table, one row per increment: state (not started, in progress, done, blocked) and the evidence in a sentence or two: the commands run, the counts, the run IDs, what was skipped and why. Under it, one line for the review build: where it is and the commit it shows.
-
-## Reporting
-
-Lead with what a person can do now that they couldn't before, then the evidence, then what's blocked and on whom, then what's next. Say what wasn't checked. Name the review build in every status report: where it is (the address, or the app and how to open it), which commit it shows, and whether it's current. Keep it short enough to read in a minute; in the main chat, three plain lines unless the owner asks for more, with the detail in the work plan and handoff.
-
-## Delegation
-
-- **Coordinator:** dispatch implementation, builds, test suites and long commands to bounded workers. Do only short routing, record-keeping and evidence checks yourself; do not redo worker execution.
-- Give each worker an objective, scope and stop condition, working copy, mode and bounds, completion signal, exactly what to return, and the main-chat message rule (above). Dispatch every ready item in parallel, then end the coordinator turn.
-- **Worker:** carry out the assignment directly. Subdivide only work needing substantial separate context; never delegate a single continuous trace just to create more workers. Any additional writer needs the coordinator's ownership assignment.
-- Without parallel conversations, use the short-turn fallback in `orchestrate`; a coordinator never hides a blocking wait behind a "background" label.
-
-## Independent review
-
-Before merging something risky (shared infrastructure, security, data, anything hard to undo), get an independent review of the diff against the hard requirements and the done-when lines: a reviewer sub-agent where the tool has one, otherwise a fresh pass that reads only the diff and the requirements. Fix what it finds, with tests.
-
-## The handoff
-
-End every unattended stretch with a handoff another person or agent can act on without asking anything:
-
-- **Done:** what a person can do now, with the evidence (tests, runs, commits).
-- **Review build:** where it is, the commit it shows, how to open it and how to refresh it, so the owner can try the work straight away and the next session keeps it running.
-- **In progress:** what, how far, which branch.
-- **Coordinator state:** the authoritative registry/queue location, unread message and completion-record locations, live worker IDs and working copies, queued triggers (the dependency map), the one recorded successor, and any retired coordinators. A new coordinator adopts them; it does not recreate workers.
-- **Messages:** the main-chat rule: sub-chats write to the main chat only for an owner decision, something to try, or a safety blocker, in at most 3 plain lines; messages from retired coordinators are ignored.
-- **Waiting on you:** each decision, account or credential, with the options, a recommendation, and the working default in use; and each merge, push or release that's ready but outside the agent's bounds, with the exact command and what to watch.
-- **Try first:** the one thing to open or run, and what they should see.
-- **Not checked:** what was skipped deliberately, and why.
-- **Changes to the intent:** assumptions proven or disproven, promises at risk, differences between what was built and what was specified, for whoever owns the product intent.
-
-## Rolling over to a new session
-
-A session that runs for hours slows down (the editor holds the whole conversation) and forgets (each compaction loses detail). Hand over to a new session instead of letting it run on.
-
-**When:** at the session limit, by default 90 minutes, 300 tool calls or 2 context compactions, whichever comes first (a project fact); whenever the session clock says so, which is mandatory (`orchestrate`); or sooner, when the editor or the agent is slowing down. Workers roll over once their current step is checked, never mid-edit or with their check still running. The coordinator rolls over at a routing boundary, without waiting for workers or stopping their work. Never start another increment first.
-
-**Coordinator handover:** reconcile unread messages, completion records and the live worker list first. Write the registry location, queue, routing and bounds in the handoff. Check for an existing successor before creating exactly one fresh coordinator, record its ID and transfer registry ownership, record the old coordinator as retired, then end the old coordinator's turn. From then on the main chat routes to the successor and ignores the retired one's messages; the handover itself is not news for the main chat. The successor reads live state before dispatching and keeps orchestrating the existing workers. Worker clocks and limits are unchanged; no mass restarts, duplicate workers or blocking acknowledgement loops.
-
-**Worker handover:**
-
-1. Commit the verified work, within the bounds. Work that isn't verified goes in the handoff as in progress, never committed as done. Refresh the review build to the last validated commit, and leave it running for the next session.
-2. Write the handoff (`templates/handoff.md`), starting with the line to resume with, and saying where the review build is.
-3. Add a log line: `rollover: <why>; handoff written; <commit>`.
-4. Arrange exactly one continuation with the coordinator: check pending messages and the live worker list before either creates it. Start it with a short first prompt: read the handoff and resume, with the same mode, bounds and completion route, and roll over again at the next limit. Record the successor and send its ID to the coordinator. If creation is uncertain, reconcile instead of launching again.
-5. Stop writing in the old session before the successor writes. One writer per working copy, not one session per project; independent workers can continue in isolated copies.
-
-**Both roles:** after ownership is handed over, explicitly mark the old clock's roll-over with `node .github/hooks/orchestration-clock.mjs mark rollover` (`--session <id>` when clocks share a folder). Launching a worker or continuation does not by itself mark a roll-over. Without a session tool, write the handoff, give the owner the resume prompt, mark the old clock and stop; never loosen the limits to stay alive.
+The goal and mode · what's done, with commits · what's running, with its owner · what's next · blockers and owner decisions pending · the review build and how to open it · the clock's state. Plain words, one page.

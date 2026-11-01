@@ -1,76 +1,43 @@
 ---
 name: execution-modes
-description: Use when choosing, switching or explaining how to run a piece of work. Defines the goal modes (show me the UX sooner, prove the risky assumption, make this production-ready) and the attention modes (work with me, keep going unattended) - what each produces first, what it defers, what evidence ends it, and when to switch.
+description: Use when choosing, switching or explaining how to run a piece of work. The mode ladder - strict design (screens before any implementation), show me the UX sooner, make this production-ready, and the side mode prove the risky assumption - with what each produces, allows, forbids and what ends it, plus the attention modes work with me and keep going unattended. Holds the mandatory rule - no tests on unapproved designs and never the full suite in show me the UX sooner.
 ---
 
 # Execution modes
 
-> **MANDATORY, no exceptions, in every mode:** NEVER run the full test suite or any unnecessary test on an unapproved design (one the owner hasn't explicitly signed off on, UX and UI). NEVER run the full test suite in "show me the UX sooner" mode. Before sign-off only the build, the type check and the project's static check of view documents run (`orchestrate`).
+Pick the mode from what the owner needs next, name it in every brief, and tell the guard ([`orchestrate`](../orchestrate/SKILL.md#modes)). When unsure, go one rung lower: the owner seeing something sooner is rarely wrong.
 
-A mode is a **goal** plus an **attention** level. The goal says what kind of result comes next; the attention says how the owner is involved. "Show me the UX sooner, keep going unattended" is a mode; so is "make this production-ready, work with me".
+## The ladder
 
-## Roles in every mode
+| Mode (guard value) | When | Produces | Checks allowed | Forbidden | Ends when |
+| --- | --- | --- | --- | --- | --- |
+| **Strict design** (`design`) | Exploring; the owner hasn't approved the design | Screens the owner can open: static or clickable, built from the real design system where there is one, otherwise mockups. Several variants when the direction is open. | It renders, and the owner can open it | Implementation, wiring, data, persistence, tests of any kind, CI, hardening | The owner approves the design → show me the UX sooner, or production-ready |
+| **Show me the UX sooner** (`ux-sooner`) | The design is approved, or the change is small; the owner hasn't used it yet | The working feature in the review build, reached through the normal UI, behind no flag | The build, the type check, the project's static checks | The full suite, end-to-end runs, captures, benchmarks, CI waits, hardening, any unnecessary test | The owner signs off on how it looks and works → production-ready |
+| **Make this production-ready** (`production-ready`) | The owner has signed off | The change done to the project's Definition of Done | Tiers 0 to 3 by risk; the full suite only on its trigger ([`stage-validation`](../stage-validation/SKILL.md)) | Checks that name no risk here | The Definition of Done holds, with evidence |
+| **Prove the risky assumption** (`assumption`) | A named risk could sink the plan | The smallest spike, with a pass or fail criterion set first | What the criterion needs | Product polish, merging the spike as product code | The criterion is answered and the decision recorded |
 
-The main chat stays free for triage, and the **coordinator** routes the work (`orchestrate`, `coordinate`). They read live state, route each prompt, queue dependencies, dispatch every ready item as a parallel track, steer workers and end their turns. Workers implement and run checks. Neither attention mode permits coordinator implementation, long commands, sleeps, polling loops or blocking waits. The intervals below bound worker execution, not coordinator turn length; both roles keep the same session clock limits.
+**MANDATORY: no tests on unapproved designs.** Never run the full suite or any unnecessary test on a design the owner hasn't explicitly approved, and never run the full suite in show me the UX sooner. Silence, green checks, a merge or a reviewer's score isn't approval. The owner's look at the build is the test.
 
-## Goal modes
+## Strict design
 
-### Show me the UX sooner
+- Show before building: the first deliverable is something the owner can open within minutes, never code behind it.
+- Use the real design system's components and tokens where they exist, so an approved screen carries straight into the product. Fake the data in the screen.
+- Iterate on the owner's feedback in small, fast rounds; each round is a new build the owner can open.
+- Record each approved design and its decisions in the project's documentation system.
 
-Produce something the owner can play with or review early, so they can judge the concept before anything is hardened.
+## Moving up and down
 
-- **First:** the main flow, end to end, on real screens with realistic content. Fixtures, fakes and stubs behind it are fine.
-- **Keep:** whatever affects the judgement: the real words, the real layout at real sizes, the waits a person would feel, the states the flow can reach.
-- **Defer:** persistence, rare edge cases, full accessibility and performance work, refactoring, broad tests. Write every shortcut on the work plan's **shortcuts** list so production work can find them.
-- **MANDATORY checks, and only these:** the build, the type check and the project's static check of view documents. **NEVER the full test suite in this mode,** and nothing else either: no end-to-end or journey tests, no aggregate unit runs, no capture runs, no accessibility or render passes, no benchmarks, no CI waits. The design is unapproved until the owner explicitly signs off on its UX and UI; their review is the test.
-- **Evidence:** the owner can reach it (a link, a command, a build) with a **Try it** that says what to look at; it builds, and the allowed checks pass; you've opened it and walked the main flow by hand.
-- **Ends when:** the owner gives a verdict (keep, change, drop), or the questions it was built to answer are answered. Then switch: production-ready for what's kept, or another round.
+- **Up** only on the owner's explicit approval. Record it with the date.
+- **Down** when the owner reopens the design, or a production-ready change turns out to need a new design.
+- An approved prototype's next increment is "wire it into the main app", never "rebuild it".
 
-### Prove the risky assumption
+## Attention
 
-Run the smallest experiment that settles one uncertainty, product or technical, before more is built on it.
+| | Work with me | Keep going unattended |
+| --- | --- | --- |
+| When | The owner is here, testing and giving feedback | The owner is away, or says "unattended" |
+| Rhythm | Their queue first, one item at a time, about 15 minutes from a request to something they can see | 45-minute time-boxes on the critical path |
+| Builders | One by default; two only on separate files, each visible within 15 minutes | At most two, on areas that don't overlap |
+| Ends with | Each fix in the review build | A handoff for the owner's return, naming the review build |
 
-- **Before starting:** state the belief, the result that would confirm or refute it, and what changes in the plan for each outcome. If no result would change anything, it isn't worth testing.
-- **First:** the cheapest experiment that could give that result: a spike, a prototype, a benchmark, a call to the real service, or a short script for watching a person try it.
-- **Bound it:** usually one 45-minute interval, on a throwaway branch in its own working copy, as a parallel track when other work can go on (`orchestrate`). Experiment code isn't merged into the product unless it's rebuilt to the production bar and checked on the combined result (`stage-validation`).
-- **Evidence:** the result against the criterion, with the run, the numbers or the observation, recorded against the assumption's ID where the product intent tracks it (A1), or against a hypothesis in the work plan (H1) when there's no product intent.
-- **Ends when:** the result is in, or the time is up (record "inconclusive", what was learned and the next cheapest test). Then return to the plan with the decision it changes.
-
-### Make this production-ready
-
-Bring validated work up to the project's quality bar: correct, tested, accessible, fast enough, secure, maintainable, documented.
-
-- **When:** after the concept or direction is validated, or for routine changes in an established product, scaled to the size of the change.
-- **First:** replace what's on the shortcuts list, cover the failure branches, then apply the project's quality standards (its design system, copy rules, accessibility, performance budgets and security requirements).
-- **Evidence:** the checks the change needs (`stage-validation`, up to tier 3 before a release), and every Definition of Done row or done-when line with its proof.
-- **Ends when:** every row passes or is blocked with its reason, and the change is merged and released as far as the bounds allow, without breaking anything live. When merging, pushing or deploying isn't within the bounds, or the project doesn't deploy, it ends at "validated and ready to release", with the exact owner action in the handoff.
-
-### Choosing and switching
-
-- One goal per task at a time. When a request mixes them ("show me, and make it solid"), do them in order: show, then harden. Independent workers may have different goals.
-- Don't harden what isn't validated: no production work on a concept the owner hasn't seen, unless they ask for it. A design enters "make this production-ready", and its broader tests, only after the owner has explicitly signed off on its UX and UI.
-- Don't build on an unproven belief that could sink the plan; prove it first.
-- Recheck the goal at every progress review. Switch when its end condition is met, or when evidence says another goal is worth more now. Log the switch and why.
-
-## Attention modes
-
-### Work with me
-
-The owner is collaborating: trying things, giving feedback, deciding.
-
-- About **15 minutes from report to something they can see.** Focused increments, one change at a time.
-- Before showing each increment, only the fast checks, 5 minutes or less: the unit tests the change touches and the one end-to-end test that covers it. No full suite or benchmark between the owner and the next thing they'll see. **For an unapproved design, not even those:** only the build, the type check and the static view check.
-- Tier-3 triggers (`stage-validation`) still hold for approved work, never for an unapproved design: when the change touches a release, dependencies, shared infrastructure, or the production or security path, run those broad checks before it's merged or released, in the background while the owner reviews when the tool allows, otherwise at the end of the session.
-- Ship where they'll see it, and say exactly what to reopen or reload.
-- Triage new feedback against live state (`orchestrate`, `coordinate`): steer the current writer or queue its follow-up; start independent work in an isolated copy; queue dependencies with triggers; steer or stop for corrections; update the plan and reply in one to three lines. Settle how something should behave from the reference products or prior decisions, and record the source. Ask only what's the owner's to decide; offer choices with a recommendation first.
-
-### Keep going unattended
-
-The owner is away. Continue within explicit bounds.
-
-- **Bounds first:** time (when to stop), scope (which goal, which items), what never to touch, what to escalate. Use theirs; otherwise write reasonable ones at the top of the work plan.
-- **Intervals:** work in **45-minute intervals**, each ending in what works merged into the work branch, or a recorded checkpoint.
-- **Decide, don't ask.** Resolve ambiguity with the most reasonable option, write it in the work plan's decisions as a working default (W1), and keep going. How something should behave is settled from the project's reference products or prior decisions, with the source recorded, not asked. W1 records execution choices; a product question the intent already lists (O1) is cited with the working default used, not copied, and a new product question goes in the handoff's changes to the intent.
-- **Escalate only when needed:** something only the owner can provide or decide (an account, a credential, a licence, publishing, deleting their data, a decision with lasting consequences), or something irreversible, public or costly. Record it with the options and a recommendation, then continue with everything that isn't blocked.
-- Run the broad checks before merging risky changes, review progress about every 30 minutes, and keep the log current.
-- **End with a handoff** (`coordinate`).
+Never widen a running task with new feedback: queue it.

@@ -14,9 +14,9 @@
  * - The project's AGENTS.md (and CLAUDE.md, when there is one) gets a section between its own markers, with the
  *   project facts the skills read, to fill in. Other sections, including other harnesses', are left alone. Run
  *   again to update; the section's filled-in facts are kept, and a fact the harness added since is added as its placeholder.
- * - For Copilot, the session clock goes to `.github/hooks/` (with --global: `~/.copilot/hooks/`): `orchestration-clock.mjs`
- *   and the hook configuration `orchestration-clock.json`, which runs it on session start, after each tool call, before
- *   a compaction and at the end of a turn. A configuration already there is kept, with any limits tuned in it.
+ * - For Copilot, the clock and guard go to `.github/hooks/` (with --global: `~/.copilot/hooks/`): `orchestration-clock.mjs`,
+ *   `orchestration-clock.json` (session start, after each tool call, before a compaction, end of turn) and
+ *   `orchestration-guard.json` (before each tool call, on each prompt). A configuration already there is kept.
  * - --templates copies the work plan, progress log and handoff starters into a folder, keeping any file already there.
  * Without --for it installs for Copilot, plus Claude Code when the project has .claude/ or CLAUDE.md, plus the
  * open skills layout when the project has .agents/.
@@ -35,37 +35,24 @@ export function section(/** @type {string | null} */ facts) {
   const defaultFacts = `### Project facts (fill in; the skills read these)
 
 - **Product intent:** <path to the spec and Definitions of Done, or "none: the work plan states the goal, done when and limits">
-- **Reference products:** <the products whose current behaviour settles how something should work, in order of preference, and where decisions are recorded with their sources; or "none">
+- **Documentation system:** <where owner requirements, attachments, references, decisions and the spec are written; every increment updates it in the same commit>
+- **Reference products:** <the products whose current behaviour settles how something should work, and where decisions are recorded with their sources; or "none">
 - **Work plan:** <path to the current work plan>
-- **Commands by validation tier:** unit, related files \`<…>\` · types \`<…>\` · one end-to-end test \`<…> -g "<title>"\` · full suites \`<…>\` · production build with budgets \`<…>\`
+- **Commands by validation tier:** static and build \`<…>\` · unit, related files \`<…>\` · types \`<…>\` · one end-to-end test \`<…> -g "<title>"\` · full suites \`<…>\` · production build with budgets \`<…>\`
 - **Progress log:** <a path outside the repository, or an ignored folder inside it when the agent can't write outside>
-- **Coordinator registry:** <session-store location or ignored queue file, readable by a successor; task, owner worker, working copy, state, trigger and completion signal; message routes or completion-record paths>
+- **Owner's main chat:** <how sub-chats reach the owner's main chat; owner reports go only there>
+- **Coordinator registry:** <where the registry is (readable by a successor), and how workers report completion>
 - **Branches and merges:** <work branch or worktree> · merge with \`<…>\` · deploy watched with \`<…>\` · the agent may: <merge, push, deploy, or none: the owner does> · must never break: <the live product, an API>
-- **Review build:** <how to start and refresh it (its own checkout, such as a git worktree at the last validated commit, with its own port or user-data folder and demo data), and where it is (an address, or the app and how to open it)>
-- **Reviews and escalation:** review every <30> minutes · roll over to a new session after <90> minutes, <300> tool calls or <2> compactions (the session clock's limits, in its hook configuration) · always escalate: <what waits for the owner>`;
+- **Review build:** <how to start and refresh it (its own checkout at the last validated commit, its own port or user-data folder, demo data), and where it is (an address, or the app and how to open it)>
+- **Reviews and escalation:** review every <30> active minutes · roll over after <90> active minutes, <300> tool calls or <2> compactions (the clock's limits, in its hook configuration) · always escalate: <what waits for the owner>`;
   return `${START}
 ## Orchestration (agent-orchestration harness)
 
-This project uses the [agent-orchestration](https://github.com/prabinpebam/agent-orchestration) skills to carry out work. Start with the \`orchestrate\` skill: it picks the mode (show me the UX sooner, prove the risky assumption, make this production-ready; work with me or keep going unattended) and routes to \`execution-modes\`, \`stage-validation\`, \`progress-review\` and \`coordinate\`. Agent: \`throughput-reviewer\` (about every 30 minutes of running work). The session clock (Copilot hooks in \`.github/hooks/orchestration-clock.json\`) is **mandatory**: it says when a review is due and when to roll over to a new session. Act on every reminder before the next increment, and never disable it or loosen its limits without the owner. Where the tool has no hooks, keep time by hand on the same limits. A **review build** is always running for the owner to try: built from the last validated commit, isolated from development (its own checkout, port or user-data folder, and demo data), refreshed at each validated increment or stage close, and named in every status report and handoff. These skills decide how work is run, not what to build; product intent comes from the files named below when there are any.
-
-**MANDATORY: no tests on unapproved designs, no exceptions.** NEVER run the full test suite or any unnecessary test on an unapproved design (the owner hasn't explicitly signed off on its UX and UI), and NEVER run the full test suite in "show me the UX sooner". Before sign-off only the build, the type check and the project's static check of view documents run: no end-to-end or journey tests, aggregate unit runs, captures, accessibility or render passes, benchmarks or CI waits. No mode, tier trigger or project gate overrides this; a progress review reports any violation as the top waste.
-
-**MANDATORY: handing over is not completion, no exceptions.** Delegating, dispatching, routing or handing over is NOT completion. Never call the task-completion tool, never write "Task completed", "Done" or "Completed", and never show a completion summary when the work has only been handed to a worker or coordinator, or is still running, queued or unverified. A triage reply for handed-over work says "Handed over: …" or "In progress: …", who has it and how the owner will hear back, and ends the turn without a completion signal. "Complete" is only for an outcome the owner can see and that has been verified (an app open and responding, a commit pushed and seen on the remote, an answer given).
-
-**Keep the main chat free.** The main chat is for triage only; everything else is delegated, and a main chat that isn't ready for the owner's next input is a failure. For every owner prompt it reads live state (unread messages, completion records, the live worker list and the durable registry/queue), classifies the input (a new item, a change of direction, a priority change, a rule change or a question), finds the affected tracks, steers, queues or launches, updates the execution plan, and ends with a one- to three-line reply. Long or multi-track work runs as main chat (triage only) → one delivery coordinator (registry, dependency map, routing, verification) → bounded workers; the main chat routes new direction to the current coordinator from the registry, never creates a second one, and doesn't re-verify routine deliveries. Workers do implementation, builds, test suites and long commands. Keep coordinator turns short and end them; no sleeps, polling loops, blocking waits or watchers that hold a turn open. One writer per working copy; check for an existing worker or successor before any launch.
-
-**A quiet main chat.** Sub-chats message the main chat only for a decision only the owner can make, something new ready to try, or a safety blocker: at most 3 plain lines, no IDs or jargon. Acknowledgements, milestones, dispatch and transfer notes go to the coordinator and the records. The main chat ignores stale and routine notes (one short line when a reply can't be avoided) and anything from a retired coordinator. Every worker assignment and handoff carries this rule.
-
-**Parallel tracks.** Independent items don't wait in one queue: the coordinator keeps a dependency map in the registry and dispatches every ready item, each with its own worktree and branch, worker and completion record. Build an uncertain piece as an isolated proof of concept first. Integrate tracks one at a time and run the checks again on the combined result; when two touch the same files, rebase the second onto the first. Before deleting a worktree, remove shared dependency links in it (such as a \`node_modules\` junction) non-recursively.
-
-**Decide, don't ask.** Settle how something should behave from the reference products or prior decisions named below, and record the source. Ask the owner only for decisions that are theirs: irreversible actions, licences, publishing, real accounts, deleting their data.
-
-**Yielding is not finishing.** Completion is event-driven, and ending a coordinator turn is not completing the owner's task: never mark it complete to silence keep-working reminders while dispatched or queued work remains; answer each reminder in one line; where the host can't idle with work pending, say so and use its supported continuation. At the same session limits, hand the registry to one fresh coordinator without restarting workers or resetting their clocks; explicitly mark the old clock's roll-over after transfer. Use \`--session <id>\` for clock commands when sessions share a folder. This was learned in VS Code agent sessions; other tools differ. Without parallel chats or notifications, keep a file queue, use short turns and start-of-turn status checks, and ask the owner to re-prompt (\`orchestrate\`).
+This project runs work with the [agent-orchestration](https://github.com/prabinpebam/agent-orchestration) skills. Start with the \`orchestrate\` skill: its **pre-action checklist** comes before every tool call and reply. It routes to \`execution-modes\` (the mode ladder: strict design, show me the UX sooner, prove the risky assumption, make this production-ready; work with me or keep going unattended), \`stage-validation\`, \`progress-review\` and \`coordinate\`. Agent: \`throughput-reviewer\`. The hooks in \`.github/hooks/\` are **mandatory**: the session clock (\`${CLOCK_HOOKS}\`) schedules reviews and roll-overs on active time, and the guard (\`${GUARD_HOOKS}\`) denies what the session's role and mode forbid; never disable them or loosen their limits without the owner. Project rules below and in this file win over the kit's general rules.
 
 ${mergeFacts(facts, defaultFacts)}
 ${END}`;
 }
-
 /** The project's filled-in facts, plus any fact the harness added since (as its placeholder line), before the last fact. */
 export function mergeFacts(/** @type {string | null} */ facts, /** @type {string} */ defaults) {
   if (!facts) return defaults;
@@ -116,18 +103,24 @@ export function plan(/** @type {string} */ target, /** @type {string[]} */ kinds
 
 export const CLOCK = 'orchestration-clock.mjs';
 export const CLOCK_HOOKS = 'orchestration-clock.json';
+export const GUARD_HOOKS = 'orchestration-guard.json';
 const hooksDir = (/** @type {string} */ base, /** @type {boolean} */ global) => join(base, global ? '.copilot' : '.github', 'hooks');
 
-/** The Copilot hook configuration that runs the session clock, and where it goes. */
-export function clockHooks(/** @type {string} */ target, /** @type {boolean} */ global) {
+/** A Copilot hook configuration that runs the clock script on `events`, and where it goes. */
+function hookConfig(/** @type {string} */ target, /** @type {boolean} */ global, /** @type {string} */ name, /** @type {string[]} */ events, /** @type {number} */ timeoutSec) {
   const dir = hooksDir(global ? homedir() : target, global);
   const script = global ? join(dir, CLOCK).replace(/\\/g, '/') : `.github/hooks/${CLOCK}`;
   const cmd = `node ${global ? `"${script}"` : script}`;
   const env = { AO_REVIEW_MIN: '30', AO_ROLLOVER_MIN: '90', AO_ROLLOVER_TOOLS: '300', AO_ROLLOVER_COMPACTIONS: '2', AO_CLOCK_CMD: cmd };
-  const entry = (/** @type {string} */ event) => [{ type: 'command', command: `${cmd} ${event}`, timeoutSec: 10, env }];
-  const json = { version: 1, hooks: Object.fromEntries(['sessionStart', 'postToolUse', 'preCompact', 'agentStop'].map((e) => [e, entry(e)])) };
-  return { file: join(dir, CLOCK_HOOKS), text: `${JSON.stringify(json, null, 2)}\n` };
+  const entry = (/** @type {string} */ event) => [{ type: 'command', command: `${cmd} ${event}`, timeoutSec, env }];
+  const json = { version: 1, hooks: Object.fromEntries(events.map((e) => [e, entry(e)])) };
+  return { file: join(dir, name), text: `${JSON.stringify(json, null, 2)}\n` };
 }
+
+/** The session clock's hooks: reviews and roll-overs. */
+export const clockHooks = (/** @type {string} */ target, /** @type {boolean} */ global) => hookConfig(target, global, CLOCK_HOOKS, ['sessionStart', 'postToolUse', 'preCompact', 'agentStop'], 10);
+/** The guard's hooks: denies what the session's role and mode forbid, and notes when a prompt arrives. */
+export const guardHooks = (/** @type {string} */ target, /** @type {boolean} */ global) => hookConfig(target, global, GUARD_HOOKS, ['preToolUse', 'userPromptSubmitted'], 5);
 
 /** The agents to install for when --for isn't given. */
 export function defaultKinds(/** @type {string} */ root) {
@@ -166,13 +159,14 @@ function main(/** @type {string[]} */ argv) {
     }
   }
   if (kinds.includes('copilot')) {
-    const h = clockHooks(root, global);
-    if (existsSync(h.file)) say(`keep ${h.file} (the session clock's hooks and limits)`);
-    else {
-      say(`create ${h.file} (the session clock's hooks)`);
-      if (!dry) {
-        mkdirSync(dirname(h.file), { recursive: true });
-        writeFileSync(h.file, h.text);
+    for (const h of [clockHooks(root, global), guardHooks(root, global)]) {
+      if (existsSync(h.file)) say(`keep ${h.file} (with any limits tuned in it)`);
+      else {
+        say(`create ${h.file}`);
+        if (!dry) {
+          mkdirSync(dirname(h.file), { recursive: true });
+          writeFileSync(h.file, h.text);
+        }
       }
     }
   }

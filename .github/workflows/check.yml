@@ -26,4 +26,5 @@ jobs:
           test -f "$RUNNER_TEMP/project/.agents/skills/orchestrate/SKILL.md"
           test -f "$RUNNER_TEMP/project/.github/hooks/orchestration-clock.json"
           test -f "$RUNNER_TEMP/project/.github/hooks/orchestration-clock.mjs"
+          test -f "$RUNNER_TEMP/project/.github/hooks/orchestration-guard.json"
           grep -q "agent-orchestration:start" "$RUNNER_TEMP/project/AGENTS.md"

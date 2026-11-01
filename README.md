@@ -1,210 +1,65 @@
 # agent-orchestration
 
-A project-agnostic harness for **how AI coding agents carry out work**: choosing an execution mode, running bounded loops with the owner present or away, checking at the depth each stage needs, reviewing progress about every 30 minutes, and changing course when progress stalls. Success is measured in useful, validated outcomes per unit of time, not in checklists completed or foundations laid early.
+Skills, an agent and Copilot hooks that control how a coding agent carries out work. The owner sees validated progress fast, never loses an instruction, and always gets their chat back. Project-agnostic, with no dependencies.
 
-The main chat stays **free for triage**: it reads each new prompt and live state, routes it into the plan and replies in a few lines. A coordinator (the main chat itself for short work, its own chat for long or multi-track work) keeps the registry and dependency map, dispatches every ready item as a parallel track, steers or stops workers and verifies deliveries. Workers implement and run builds, tests and long commands. No sleeps, polls, blocking waits or watchers that keep a turn busy, and no routine chatter in the main chat.
-
-It's a set of **skills** (instructions an agent loads when they apply), one **agent** (a reviewer), **templates** and an installer with no dependencies. It works with GitHub Copilot (VS Code and CLI), Claude Code, Codex, and any agent that reads `AGENTS.md` or skill folders, without assuming they all offer the same capabilities.
-
-It decides **how** to do the work, not **what** is worth building. It reads product intent when a project has some (for example, from [agentic-craft](https://github.com/prabinpebam/agentic-craft)), and stays useful for code tasks that have no formal spec.
-
-## MANDATORY: no tests on unapproved designs
-
-Extremely strict, no exceptions, in every mode:
-
-- **NEVER run the full test suite or any unnecessary test on an unapproved design.** A design is unapproved until the owner has explicitly signed off on its UX and UI.
-- **NEVER run the full test suite in "show me the UX sooner" mode.**
-
-Before sign-off, only the build, the type check and the project's static check of view documents run. Nothing else: no end-to-end or journey tests, aggregate unit runs, captures, accessibility or render passes, benchmarks or CI waits. The owner's review is the test. A progress review reports any violation as the top waste.
+It decides how work runs, not what to build. Product intent comes from the project.
 
 ## What's in it
 
-| Skill | Use it when | What it gives you |
-|---|---|---|
-| [`orchestrate`](skills/orchestrate/SKILL.md) | Starting multi-step work; triaging prompts; the owner is away | The free main chat, coordinator and worker roles, the triage steps for every prompt, parallel tracks, intent-mode-bounds start, execution loop, session clock, review build and tool-portability fallbacks |
-| [`execution-modes`](skills/execution-modes/SKILL.md) | Choosing or switching how to run the work | Three goal modes and two attention modes: what each produces first, defers, proves, and when it ends |
-| [`stage-validation`](skills/stage-validation/SKILL.md) | Deciding which checks to run or what evidence a stage needs | Evidence by goal mode, validation tiers 0–3, the build-check-fix loop, integrating parallel tracks and proofs of concept, refreshing the review build, blocked items, found on the way, ready to show, merging exactly what was tested |
-| [`progress-review`](skills/progress-review/SKILL.md) | About every 30 minutes; at the end of an interval; when progress stalls | Nine questions (the last on the session's cost), stall signals, and how to change course |
-| [`coordinate`](skills/coordinate/SKILL.md) | Triaging prompts, queuing, delegating, logging, reporting, reviewing and handing over | The durable registry/queue and dependency map, the quiet main chat, event-driven completion, duplicate prevention, records, bounded workers and single-successor roll-overs |
+| Part | What it does |
+| --- | --- |
+| [`orchestrate`](skills/orchestrate/SKILL.md) | The entry point: the **pre-action checklist** run before every tool call and reply, the roles, the hooks, the loop and the clock |
+| [`execution-modes`](skills/execution-modes/SKILL.md) | The mode ladder: **strict design** → **show me the UX sooner** → **make this production-ready**, plus **prove the risky assumption**; **work with me** or **keep going unattended** |
+| [`stage-validation`](skills/stage-validation/SKILL.md) | Checks scoped to mode and risk, integrating and merging, the review build |
+| [`progress-review`](skills/progress-review/SKILL.md) | The review every 30 active minutes |
+| [`coordinate`](skills/coordinate/SKILL.md) | The registry, dispatch, messages, logs, handoffs and roll-overs |
+| [`throughput-reviewer`](agents/throughput-reviewer.agent.md) | Runs the progress review as a separate pass |
+| [`tools/clock.mjs`](tools/clock.mjs) | The session clock and the guard, run from Copilot hooks |
+| [`templates/`](templates/) | Work plan, progress log and handoff starters |
 
-| Agent | Job |
-|---|---|
-| [`throughput-reviewer`](agents/throughput-reviewer.agent.md) | About every 30 minutes of running work: is this the fastest path to validated progress? Same questions as `progress-review`, run as a sub-agent where the tool has them |
+## The rules, and how they're enforced
 
-| Template | |
-|---|---|
-| [`work-plan.md`](templates/work-plan.md) | Intent, mode and bounds, coordinator and registry/queue location, ownership fields, increments with checks, working defaults, shortcuts, status |
-| [`progress-log.md`](templates/progress-log.md) | The log line, tagged by mode |
-| [`handoff.md`](templates/handoff.md) | The end-of-stretch handoff, including registry/queue, live workers, successor, review build and changes to intent |
+The hard rules are marked **MANDATORY**, and there are few of them. Each lives in one place. Where the host has hooks, a mechanism enforces them; elsewhere, the checklist does.
 
-| Tool (Node 20+, no dependencies) | |
-|---|---|
-| `tools/install.mjs` | Installs the skills and agent into a project, or for every project on the computer, with the session clock's hooks for Copilot |
-| `tools/clock.mjs` | The session clock: run by the tool's hooks, it says when a progress review is due and when the session should roll over to a new one, so neither depends on the agent remembering |
+| Rule | Hook (Copilot) | Everywhere |
+| --- | --- | --- |
+| The main chat only talks to the owner | The guard denies shell, subagent, poll and wait tools in a session marked `main` | Checklist 1 |
+| A coordinator's turns stay short | The guard denies builds, tests and waits in a session marked `coordinator` | Checklist 1 |
+| No tests on an unapproved design; never the full suite in show me the UX sooner | The guard denies test, end-to-end, benchmark and CI-wait commands in modes `design` and `ux-sooner` | Checklist 2 |
+| Handing over is not completion | — | Checklist 3 |
+| Every owner instruction goes into the project's documentation system | — | Checklist 4 |
+| Owner reports go only to the main chat, as 3 plain lines | — | Checklist 5 |
+| Reviews every 30 active minutes; roll-overs at limits, idle time not counted; the main chat never rolls over; coordinators only at context limits; nobody while the owner is steering | The clock | Kept by hand |
 
-## The session clock
-
-Long runs forget the two things that keep them healthy: the review every 30 minutes, and handing over to a fresh session before the old one slows down (an editor holding hours of conversation gets sluggish, and each context compaction loses detail). The clock makes both scheduled.
-
-**The clock is mandatory.** It's part of using this kit, not an add-on. Every session that runs work under these skills runs with it. Where a tool has no hooks, the agent keeps time by hand against the same limits. Its reminders are instructions: a due review comes before the next increment, and a due roll-over comes at the next safe point. The agent never disables the clock or loosens its limits; only the owner does, and records it in the project facts. A missing clock is fixed first (re-run the installer), and the progress review reports a skipped reminder as its top finding.
-
-For GitHub Copilot (VS Code, the CLI and the app share the hook format) the installer writes `.github/hooks/orchestration-clock.json`, which runs `.github/hooks/orchestration-clock.mjs`:
-
-| Hook | What the clock does |
-|---|---|
-| `sessionStart` | Starts the session's clock and tells the agent the limits |
-| `postToolUse` | Counts the call; when a review is due or the session is past its limit, adds a reminder after the tool's result, repeated every 5 minutes until it's done |
-| `preCompact` | Counts the compaction |
-| `agentStop` | With a roll-over due, asks for one more turn to do it (once) |
-
-Limits live in the hook configuration's `env`: `AO_REVIEW_MIN` (30), `AO_ROLLOVER_MIN` (90), `AO_ROLLOVER_TOOLS` (300), `AO_ROLLOVER_COMPACTIONS` (2); 0 turns one off. A review counts when the agent runs the `throughput-reviewer` agent, loads the `progress-review` skill or runs `mark review`. A roll-over counts only on explicit `mark rollover` after ownership transfers to the recorded successor, or after giving the owner the prompt to open one. **Creating a worker session is not a roll-over.** A coordinator transfers its registry to one fresh coordinator without waiting for or restarting workers; every role keeps the same limits.
-
-`node .github/hooks/orchestration-clock.mjs status` shows the clock when the folder has one session. With multiple clocks, use `status --session <id>` or `mark review|rollover --session <id>`; an ambiguous command refuses to choose another session's clock. State is one small file per session in the system's temporary folder (or `AO_CLOCK_DIR`), never in the project; tool arguments are read only to recognise those commands. A broken hook prints `{}` and never stops work. For other tools, `orchestrate` gives the fallback, which is just as binding: compare the time with the last review and the session's start at every log line.
-
-## The main chat, coordinator and queue
-
-**The main chat is for triage only; everything else is delegated.** If it isn't ready for the owner's next input, that's a failure. The common failure in long runs: the agent starts implementing in the main chat, and messages from other chats queue behind its turn and get stuck. For long or multi-track work, run **main chat (triage only) → one delivery coordinator → bounded workers**. The main chat routes new direction to the current coordinator, found from the registry, and never creates a second one; the coordinator owns verification, so the main chat doesn't re-check routine deliveries.
-
-Every owner prompt: read live state (unread messages, completion records, the live worker list and the registry/queue); classify it (a new item, a change of direction, a priority change, a rule change, or a question); find the affected tracks; steer, queue or launch; update the execution plan; reply in one to three lines and end the turn. Same writer's area, steer it or queue its follow-up; independent work, launch an isolated worker; dependent work, queue with an explicit trigger; correction, steer or stop. **One writer per working copy, always**; a separate branch in a shared folder is not isolation. How something should behave is settled from the project's **reference products** or prior decisions, with the source recorded; the owner is asked only for their own decisions (irreversible actions, licences, publishing, real accounts, deleting their data).
-
-**A quiet main chat.** Sub-chats message it only for a decision only the owner can make, something new ready to try, or a safety blocker: at most 3 plain lines, no IDs or jargon. Acknowledgements, milestones, dispatch and transfer notes go to the coordinator and the records. The main chat ignores stale and routine notes (one short line when a reply can't be avoided) and anything from a retired coordinator. Every assignment and handoff carries the rule.
-
-**Parallel tracks.** Independent items don't wait in one queue. The registry's triggers are a dependency map, and the coordinator dispatches every ready item, each with its own worktree and branch, worker and completion record. An uncertain piece is built first as an isolated proof of concept. Tracks are integrated one at a time with the checks run again on the combined result; when two touch the same files, the second to land is rebased onto the first. Shared dependency links in a worktree (such as a `node_modules` junction) are removed non-recursively before the worktree is deleted.
-
-Keep a durable registry in the session's own store or an ignored file: **task, owner worker, working copy, state, trigger, completion signal**, plus coordinator/successor IDs and retired coordinators. Workers report to their coordinator by message, completion record or both. The coordinator checks evidence and updates the queue at turn boundaries, never in a waiting loop. Before any worker or continuation is created, check pending messages and live workers for an existing owner or successor. Record uncertain launches and reconcile them rather than retrying.
-
-**Ending a coordinator turn is not completion.** The owner's task is done only when every dispatched part has verified evidence. Never mark it complete to silence automated keep-working reminders while workers or queued items remain; answer each reminder in one line. Where the host can't idle with work pending, state that limitation and use its supported continuation.
-
-**MANDATORY: handing over is not completion.** Delegating, dispatching, routing or handing over is NOT completion. Never call the task-completion tool, never write "Task completed", "Done" or "Completed", and never show a completion summary when the work has only been handed to a worker or coordinator, or is still running, queued or unverified. A triage reply for handed-over work says "Handed over: …" or "In progress: …", who has it and how the owner will hear back. "Complete" is only for a verified outcome the owner can see: an app open and responding, a commit pushed and seen on the remote, an answer given.
-
-## The review build
-
-The owner reviews when they choose, not when the agent stops. So a **review build** is always built, running and ready to try: a local site or a stable build of the app, at the **last validated commit**, isolated from development so the owner can give early input and change course without disturbing the work, and without the work breaking what they're looking at.
-
-| | |
-|---|---|
-| What it shows | Only commits whose checks passed. Never the working copy, uncommitted or failing work, or the dev server |
-| Where it lives | Its own checkout (for example a git worktree detached at the validated commit), its own build output, its own port or user-data folder, demo or temporary data; never the owner's real data, accounts or remotes |
-| When it moves | At each validated increment and each stage close: build in the review checkout, swap only when it's ready, check it answers. Never restarted while the owner may be using it without their agreement, and never takes their focus |
-| Where it's named | Every status report and handoff: where it is, the commit it shows, how to open and refresh it |
-
-`orchestrate` starts it (start step 5) and keeps it in the loop, `stage-validation` says when and how to refresh it, and `coordinate` puts it in reports and handoffs. Its project fact, **Review build**, says how to start and refresh it and where it is.
-
-## Modes
-
-A mode is a goal plus an attention level, said in one line before work starts ("Mode: prove the risky assumption, keep going unattended").
-
-| Goal | Produces first | Ends when |
-|---|---|---|
-| **Show me the UX sooner** | A playable or reviewable experience on realistic content; shortcuts listed | The owner gives a verdict |
-| **Prove the risky assumption** | The smallest experiment against a criterion stated in advance | The result is in, or the time is up |
-| **Make this production-ready** | Quality, accessibility, performance, tests and maintainability for validated work | Every done-when line has proof and it's live without breaking anything |
-
-| Attention | How it runs |
-|---|---|
-| **Work with me** | Focused increments, about 15 minutes to something the owner can see, fast checks only |
-| **Keep going unattended** | Explicit bounds, 45-minute intervals, decide and record working defaults, escalate only when needed, end with a handoff |
+Each session marks its role once with `node .github/hooks/orchestration-clock.mjs mark role main|coordinator|worker`. The mode is set with `mark mode design|ux-sooner|assumption|production-ready`, or by writing it in `.agent-orchestration/mode` in the working copy. The guard reads tool calls only to recognise commands; it stores and prints nothing from them. It catches its own errors and allows the call. If Node or the script itself is missing, Copilot treats the failed hook as a denial of every tool call, so keep `.github/hooks/` complete.
 
 ## Install
 
-Clone it once, then install into any project:
-
 ```sh
 git clone https://github.com/prabinpebam/agent-orchestration.git
-node agent-orchestration/tools/install.mjs path/to/your-project
+node agent-orchestration/tools/install.mjs path/to/project [--for copilot,claude,agents] [--templates docs/work] [--dry-run]
+node agent-orchestration/tools/install.mjs --global [--for copilot,claude]
 ```
 
-That copies the skills and the agent where each coding agent looks for them, installs the session clock's hooks for Copilot (an existing hook configuration is kept, with its limits), and adds an **Orchestration** section to the project's `AGENTS.md` (and `CLAUDE.md`, when there is one) with the project facts the skills read: where product intent lives, the reference products that settle how something should behave, the work plan, the commands for each validation tier, the progress log, the coordinator registry/queue and completion signals, branch and merge rules (including whether the agent may merge, push or deploy), the review build, the review interval and the session limits. Fill those in. Run it again any time to update; your filled-in facts are kept (a fact added to the harness since appears as its placeholder, to fill in), and other sections of `AGENTS.md` are left alone.
+The installer copies the skills and the agent where each tool looks for them:
 
-Options:
+| Tool | Skills | Agent |
+| --- | --- | --- |
+| Copilot | `.github/skills/` | `.github/agents/` |
+| Claude Code | `.claude/skills/` | `.claude/agents/` |
+| The open layout | `.agents/skills/` | none |
 
-```sh
-node tools/install.mjs <project> --for copilot,claude,agents   # choose the layouts
-node tools/install.mjs <project> --templates docs/work          # also copy the templates (files already there are kept)
-node tools/install.mjs <project> --dry-run                      # show what it would do
-node tools/install.mjs --global --for copilot,claude,agents     # for every project on this computer
-```
+For Copilot it also installs the clock and guard hooks in `.github/hooks/` (`orchestration-clock.json`, `orchestration-guard.json`); an existing configuration is kept.
 
-Without `--for`, it installs for Copilot, plus Claude Code when the project has `.claude/` or `CLAUDE.md`, plus the open skills layout when it has `.agents/`. The installer never deletes files; remove retired skills yourself.
+It adds an **Orchestration** section to `AGENTS.md`, with project facts to fill in: product intent, the documentation system, reference products, the work plan, commands by tier, the progress log, the owner's main chat, the registry, branches and merges, the review build, and the limits. Run it again to update: filled-in facts are kept, and new facts appear as placeholders.
 
-## Works across coding agents
+## Using it with other kits
 
-| Tool | Skills | Reviewer agent | Instructions | When a capability is missing |
-|---|---|---|---|---|
-| GitHub Copilot (VS Code, CLI) | `.github/skills/` (global `~/.copilot/skills/`) | `.github/agents/throughput-reviewer.agent.md` | `AGENTS.md` | — (the session clock runs from `.github/hooks/`, global `~/.copilot/hooks/`) |
-| Claude Code | `.claude/skills/` (global `~/.claude/skills/`) | `.claude/agents/throughput-reviewer.md` | `CLAUDE.md` or `AGENTS.md` | No session clock installed: the agent checks the time at each log line |
-| Codex and other agents using the open skills layout | `.agents/skills/` (global `~/.agents/skills/`) | Not installed | `AGENTS.md` | The `progress-review` skill carries the reviewer's questions for an inline review; no session clock |
+It works alone. Alongside a product-reasoning kit such as [agentic-craft](https://github.com/prabinpebam/agentic-craft) and a documentation kit such as [Slate](https://github.com/prabinpebam/slate), this kit reads intent and Definitions of Done; it never defines them.
 
-### Tool portability
+## Developing
 
-This was learned in **VS Code agent sessions**: a chat running a tool did not read queued prompts or sub-chat messages until its turn ended, and hooks fired between turns. Long completion-file polls hid a successor's message and caused a duplicate writer. Later sessions showed routine sub-chat messages clogging the main chat, the main chat re-verifying every delivery, and a coordinator asking the owner what the reference products already answered; the layered setup, the quiet main chat and parallel tracks fixed them. Other tools may behave differently; preserve availability and ownership rather than hard-coding that mechanism.
-
-Check each tool or IDE:
-
-- Can it run parallel conversations or agents?
-- How do messages reach a busy conversation?
-- Does it notify on completion?
-- Where can the registry persist?
-- What happens to input arriving mid-turn?
-- Can a turn end with work still pending, without marking the task complete?
-
-Without messaging, workers write completion records and the coordinator checks them at the start of each turn. In a **single-threaded tool**, keep turns short, keep the queue in a file, check status first and ask the owner to re-prompt. Explicitly separate a bounded worker turn when necessary; long checks go to an external worker or the owner, not a blocking coordinator turn. Don't promise concurrent input handling or automatic wake-up when unavailable. `orchestrate` gives the remaining fallbacks for clocks, hooks, review builds and session memory.
-
-## Use
-
-Ask your agent as you normally would; the skills load when they apply. Some starting points:
-
-- "Show me the UX for the setup flow sooner; I'll give feedback." (`orchestrate`, `execution-modes`)
-- "Before we build the importer, prove it can handle 10,000 items in under 3 seconds." (prove the risky assumption)
-- "The design is approved. Make it production-ready, unattended, for two hours; hand over when done." (`stage-validation`, `coordinate`)
-- "Fix this bug." (no spec needed: the work plan's three lines, tier 1 checks)
-- "Review progress: are we still on the fastest path?" (`progress-review`, `throughput-reviewer`)
-
-## Using it with agentic-craft and Slate
-
-Each harness works on its own. Used together, they hand artifacts across a clear line, with no shared skills and no overlapping instructions:
-
-| Harness | Owns | Produces |
-|---|---|---|
-| [agentic-craft](https://github.com/prabinpebam/agentic-craft) | What is worth building and what success means | Promise, jobs, user-can statements, flows, UX direction, assumptions and risks, Definitions of Done |
-| agent-orchestration | How the work is carried out, monitored and adapted | Work plan, mode and bounds, evidence, progress log, handoffs |
-| [Slate](https://github.com/prabinpebam/slate) | Documentation authoring and reading | Browsable pages from either harness's artifacts, when useful |
-
-What this harness reads from product intent, by its stable IDs:
-
-| Product artifact | Used to |
-|---|---|
-| Promise and non-goals (P1…) | Judge drift in progress reviews ("traced to intent") |
-| User-can statements and flows (U1…) | Plan increments that deliver them, each with the exact Try it for its build |
-| Assumptions and risks (A1…), riskiest first | Choose "prove the risky assumption", and state its criterion |
-| UX direction and views | Decide what "show me the UX sooner" produces first |
-| Stages and Definitions of Done (1.1…, PD1…) | Cite, never redefine, what each increment delivers; the evidence is recorded beside the rows |
-| Decisions with working defaults (O1…) | Cite them with the default in use instead of asking when unattended; new product questions go back in the handoff |
-
-What flows back, in the handoff's "Changes to the intent": assumptions proven or disproven, promises at risk, and where the build differs from the spec, for the product owner to fold into the spec. Without a spec, the work plan's goal, done-when and limits lines stand in for all of it, and its own IDs keep the two namespaces apart: I1 increments, H1 hypotheses, W1 working defaults (execution choices only).
-
-Slate presents the spec, the Definitions of Done, work plans and handoffs as navigable pages when a project wants them browsable. It isn't required for either harness.
-
-## Split from agentic-craft
-
-This harness was split from [agentic-craft](https://github.com/prabinpebam/agentic-craft) 0.1.0, which held both product reasoning and execution. What moved here:
-
-| agentic-craft 0.1.0 | Here |
-|---|---|
-| `orchestrate` skill | `orchestrate`, `execution-modes`, `stage-validation`, `progress-review`, `coordinate` |
-| The loop, blocked rows, found on the way, status and reporting from `definition-of-done` | `stage-validation`, `coordinate` |
-| `throughput-reviewer` agent | `throughput-reviewer`, updated for goal and attention modes |
-| `templates/progress-log.md`; the build steps and status in `templates/plan.md` | `progress-log.md`, `handoff.md`, `work-plan.md` |
-
-Projects that installed agentic-craft 0.1.0 should delete its old `orchestrate` skill and `throughput-reviewer` agent copies, install this harness, and move the progress log and branch facts into the Orchestration section.
-
-## Developing the harness
-
-```sh
-npm test    # node --test test/: skill metadata, routing, modes, reviewer questions, boundaries, links, the installer, the session clock
-```
-
-Keep it project-agnostic and independent: no product, person, machine or stack assumptions, and no dependence on another harness, in `skills/`, `agents/`, `templates/` or `tools/` (the tests check). A practice belongs here only once it has worked in a real project.
+`npm test` (Node 20+, no dependencies). See [AGENTS.md](AGENTS.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence
 

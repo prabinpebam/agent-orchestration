@@ -44,220 +44,118 @@ test('the orchestrate skill routes to every other skill, and every skill it name
   for (const m of entry.matchAll(/\| `([a-z-]+)` \|/g)) assert.ok(others.includes(m[1]), `${m[1]} exists`);
 });
 
+
 test('every goal and attention mode is named by the entry point, the modes skill and the installed section', () => {
-  const MODES = ['show me the UX sooner', 'prove the risky assumption', 'make this production-ready', 'work with me', 'keep going unattended'];
+  const MODES = ['strict design', 'show me the UX sooner', 'prove the risky assumption', 'make this production-ready', 'work with me', 'keep going unattended'];
   const texts = { orchestrate: read('skills', 'orchestrate', 'SKILL.md'), 'execution-modes': read('skills', 'execution-modes', 'SKILL.md'), section: section(null) };
   for (const mode of MODES) for (const [name, text] of Object.entries(texts)) assert.ok(text.toLowerCase().includes(mode.toLowerCase()), `${name} names "${mode}"`);
 });
 
-test('the throughput reviewer asks the same questions as the progress-review skill', () => {
+test('the throughput reviewer runs the progress-review questions instead of copying them', () => {
   const labels = (text) => [...text.matchAll(/^\d+\. \*\*([^*]+):\*\*/gm)].map((m) => m[1]);
-  const fromAgent = labels(read('agents', 'throughput-reviewer.agent.md'));
-  assert.ok(fromAgent.length >= 8);
-  assert.deepEqual(fromAgent, labels(read('skills', 'progress-review', 'SKILL.md')));
-  const question = (text, n) => text.split('\n').find((line) => line.startsWith(`${n}. `));
-  for (const n of [4, 6, 9]) assert.equal(question(read('agents', 'throughput-reviewer.agent.md'), n), question(read('skills', 'progress-review', 'SKILL.md'), n));
+  assert.ok(labels(read('skills', 'progress-review', 'SKILL.md')).length >= 8);
+  const agent = read('agents', 'throughput-reviewer.agent.md');
+  assert.match(agent, /every question in the `progress-review` skill/);
+  assert.deepEqual(labels(agent).filter((l) => !['Verdict', 'Top finding', 'Action'].includes(l)), [], 'no duplicated questions');
 });
 
-test('MANDATORY: no full or unnecessary tests on unapproved designs, and no full suite in show me the UX sooner', () => {
-  const carriers = {
-    orchestrate: read('skills', 'orchestrate', 'SKILL.md'),
-    'execution-modes': read('skills', 'execution-modes', 'SKILL.md'),
-    'stage-validation': read('skills', 'stage-validation', 'SKILL.md'),
-    'progress-review': read('skills', 'progress-review', 'SKILL.md'),
-    'throughput-reviewer': read('agents', 'throughput-reviewer.agent.md'),
-    README: read('README.md'),
-    section: section(null),
-  };
-  for (const [name, text] of Object.entries(carriers)) {
-    assert.match(text, /MANDATORY/, `${name} says MANDATORY`);
-    assert.match(text, /NEVER run the full test suite or any unnecessary test on an unapproved design|full test suite or any unnecessary test on an unapproved design/i, `${name}: unapproved designs`);
-    assert.match(text, /full (test )?suite in "show me the UX sooner"/i, `${name}: show me the UX sooner`);
+const CHECKLISTED = [['skills', 'orchestrate', 'SKILL.md'], ['skills', 'coordinate', 'SKILL.md'], ['agents', 'throughput-reviewer.agent.md']];
+
+test('MANDATORY: a short pre-action checklist of yes/no questions comes first in the entry point, the coordinator skill and the agent', () => {
+  for (const p of CHECKLISTED) {
+    const text = read(...p);
+    assert.match(text.split('\n## ')[1] ?? '', /^Pre-action checklist \(MANDATORY\)/, `${p.join('/')}: the first section is the checklist`);
+    const items = (text.split('\n## ')[1].split('\n## ')[0].match(/^\d+\. .*$/gm) ?? []);
+    assert.ok(items.length >= 3 && items.length <= 7, `${p.join('/')}: 3 to 7 items`);
+    for (const i of items) assert.match(i, /\? → /, `${p.join('/')}: "${i.slice(0, 40)}" is a question with its fix`);
   }
-  for (const name of ['orchestrate', 'stage-validation', 'README', 'section']) {
-    assert.match(carriers[name], /only the build, the type check and the project's static check of view documents/i, `${name}: what's allowed before sign-off`);
-  }
-  assert.match(carriers.orchestrate, /explicitly signed off on the UX and UI/);
-  assert.match(carriers.orchestrate, /No exceptions/);
-  assert.match(carriers['throughput-reviewer'], /top waste/);
-  const entry = carriers.orchestrate;
-  assert.ok(entry.indexOf('## MANDATORY: no tests on unapproved designs') < entry.indexOf('## Keep the main chat free'), 'near the top of orchestrate');
-  assert.match(entry.slice(entry.indexOf('## Rules that hold everywhere')), /^\*\*MANDATORY, above every rule below, no exceptions:\*\*/m);
 });
 
-test('MANDATORY: handing over is not completion, and hand-over replies are labelled as such', () => {
-  const carriers = {
-    orchestrate: read('skills', 'orchestrate', 'SKILL.md'),
-    coordinate: read('skills', 'coordinate', 'SKILL.md'),
-    'progress-review': read('skills', 'progress-review', 'SKILL.md'),
-    'throughput-reviewer': read('agents', 'throughput-reviewer.agent.md'),
-    README: read('README.md'),
-    section: section(null),
-  };
-  for (const [name, text] of Object.entries(carriers)) {
-    assert.match(text, /MANDATORY/, `${name} says MANDATORY`);
-    assert.match(text, /task-completion tool/, `${name}: names the task-completion tool`);
-    assert.match(text, /"Task completed", "Done" or "Completed"/, `${name}: names the forbidden words`);
-    assert.match(text, /handed over|handed to a worker or coordinator/i, `${name}: hand-over`);
-  }
-  for (const name of ['orchestrate', 'coordinate', 'README', 'section']) {
-    assert.match(carriers[name], /Delegating, dispatching, routing or handing over (is NOT completion|never earns)/, `${name}: delegating is not completion`);
-    assert.match(carriers[name], /"Handed over: …"/, `${name}: the hand-over label`);
-    assert.match(carriers[name], /an app open and responding, a commit pushed and seen on the remote, an answer given/, `${name}: what complete means`);
-  }
-  const entry = carriers.orchestrate;
-  assert.ok(entry.indexOf('## MANDATORY: handing over is not completion') < entry.indexOf('## Keep the main chat free'), 'near the top of orchestrate');
-  assert.match(entry.slice(entry.indexOf('## Rules that hold everywhere')), /^\*\*MANDATORY, no exceptions: handing over is not completion\.\*\*/m);
-  assert.match(entry, /\*\*Yielding is not finishing\.\*\*/, 'the existing rule stays');
-  assert.match(carriers['throughput-reviewer'], /MANDATORY-rule violation: handing over is not completion/);
+test('the checklist covers the audit\'s detection signals: role, mode, completion, docs, owner reports, ownership, ready to try', () => {
+  const list = read('skills', 'orchestrate', 'SKILL.md').split('\n## ')[1];
+  for (const label of ['Role', 'Mode', 'Completion', 'Docs', 'Owner reports', 'Ownership', 'Ready to try']) assert.match(list, new RegExp(`\\*\\*${label}\\.\\*\\*`), label);
+  assert.match(list, /main chat about to run a shell, build, test, subagent, poll or wait/);
+  assert.match(list, /any test before the owner approved the design, or the full suite outside production-ready/);
+  assert.match(list, /Say "In progress:" with what's running, who has it and when the owner will see it/);
+  assert.match(list, /project's documentation system[^\n]*same commit/);
+  assert.match(list, /their main chat[^\n]*decision, something to try or a safety blocker[^\n]*IDs or code/);
+  assert.match(list, /stale \(no action in 30 minutes, no acknowledgement\)/);
+  assert.match(list, /opened that review build myself and reached the change through the normal UI/);
 });
 
-test('the free coordinator stays separate from execution in all skills and installed instructions', () => {
-  for (const [name, text] of [
-    ...SKILLS.map((s) => [s, read('skills', s, 'SKILL.md')]),
-    ['section', section(null)], ['README', read('README.md')], ['AGENTS', read('AGENTS.md')],
-  ]) {
-    assert.match(text, /coordinator/i, `${name}: coordinator role`);
-    assert.match(text, /worker/i, `${name}: worker role`);
-  }
+test('the mode ladder: strict design first, then show me the UX sooner, then production-ready, each with what it allows and forbids', () => {
+  const modes = read('skills', 'execution-modes', 'SKILL.md');
+  const ladder = modes.split('## The ladder')[1].split('\n## ')[0];
+  const rows = ladder.split('\n').filter((l) => /^\| \*\*/.test(l));
+  assert.deepEqual(rows.map((r) => /\*\*([^*]+)\*\*/.exec(r)[1]), ['Strict design', 'Show me the UX sooner', 'Make this production-ready', 'Prove the risky assumption']);
+  assert.match(ladder, /\| Checks allowed \| Forbidden \| Ends when \|/);
+  assert.match(rows[0], /real design system/);
+  assert.match(rows[0], /It renders, and the owner can open it/);
+  assert.match(rows[0], /Implementation, wiring, data, persistence, tests of any kind, CI, hardening/);
+  assert.match(rows[0], /The owner approves the design/);
+  assert.match(rows[1], /The full suite, end-to-end runs, captures, benchmarks, CI waits, hardening, any unnecessary test/);
+  assert.match(modes, /Up\*\* only on the owner's explicit approval/);
+  assert.match(read('skills', 'orchestrate', 'SKILL.md'), /\*\*strict design\*\*[^\n]*→ \*\*show me the UX sooner\*\*[^\n]*→ \*\*make this production-ready\*\*/);
+});
+
+test('MANDATORY: no tests on unapproved designs, stated once in the ladder and linked from the checklist', () => {
+  const rule = '**MANDATORY: no tests on unapproved designs.**';
+  const owners = [...SKILLS.map((s) => ['skills', s, 'SKILL.md']), ['agents', 'throughput-reviewer.agent.md']].filter((p) => read(...p).includes(rule));
+  assert.deepEqual(owners, [['skills', 'execution-modes', 'SKILL.md']], 'one place');
+  assert.match(read('skills', 'execution-modes', 'SKILL.md'), /never run the full suite in show me the UX sooner/);
+  assert.match(read('skills', 'orchestrate', 'SKILL.md'), /\[mode\]\(\.\.\/execution-modes\/SKILL\.md#the-ladder\)/);
+  assert.match(read('skills', 'stage-validation', 'SKILL.md'), /The owner has explicitly signed off on the change's design/);
+});
+
+test('handing over is not completion, and a repeated host reminder gets no new content', () => {
   const entry = read('skills', 'orchestrate', 'SKILL.md');
-  assert.match(entry, /never does implementation, builds, test suites or long commands itself/);
-  assert.match(entry, /No sleeps, polling loops, blocking waits or watchers/);
-  assert.match(entry, /End each turn/);
-  assert.match(entry, /before acting on a new prompt or creating any worker or continuation/);
-  assert.match(section(null), /Keep coordinator turns short and end them/);
-  assert.match(read('skills', 'stage-validation', 'SKILL.md'), /Workers run checks/);
-  const coordinate = read('skills', 'coordinate', 'SKILL.md');
-  for (const [name, text] of [['orchestrate', entry], ['coordinate', coordinate], ['section', section(null)], ['README', read('README.md')], ['AGENTS', read('AGENTS.md')]]) {
-    assert.match(text, /[Ee]nding a (coordinator )?turn is not complet|doesn't complete the owner's task/, `${name}: yielding is not completion`);
-    assert.match(text, /silence (automated )?keep-working reminders/, `${name}: never complete to silence reminders`);
-  }
-  for (const text of [entry, coordinate, section(null), read('README.md')]) {
-    assert.match(text, /can't idle with work pending/);
-    assert.match(text, /supported continuation/);
-  }
+  assert.match(entry, /call a completion tool, while something I dispatched isn't verified/);
+  assert.match(entry, /an identical repeat gets no new content\. Never call the completion tool to silence one/);
+  assert.match(read('skills', 'coordinate', 'SKILL.md'), /It's "in progress" until verified/);
 });
 
-test('the main chat is for triage only: a busy main chat is a failure, and every prompt is triaged into the plan', () => {
+test('the main chat only talks to the owner, never rolls over, and is the only place owner reports go', () => {
   const entry = read('skills', 'orchestrate', 'SKILL.md');
-  assert.match(entry, /## Keep the main chat free/);
-  assert.match(entry, /used only for triage; everything else is delegated/);
-  assert.match(entry, /If the main chat isn't ready for the owner's next input, that's a failure/);
-  assert.match(entry, /starts implementing in the main chat itself\. Messages from other chats then queue behind its turn and get stuck/);
-  assert.match(entry, /main chat \(triage only\) → one delivery coordinator → bounded workers/);
-  assert.match(entry, /never creates a second coordinator/);
-  assert.match(entry, /doesn't re-verify routine deliveries or run watchers/);
-  assert.match(entry, /## Triage every owner prompt/);
-  for (const kind of ['a new item', 'a change of direction for a running item', 'a priority change', 'a rule change', 'a question']) assert.ok(entry.includes(kind), `classifies ${kind}`);
-  for (const step of ['Read live state', 'Classify the input', 'Find the affected tracks', 'Steer, queue or launch', 'Update the execution plan', 'Reply and end the turn']) assert.ok(entry.includes(`**${step}`), step);
-  assert.match(entry, /one to three plain lines/);
-  assert.match(entry, /Answer each reminder in one line/);
-  const coordinate = read('skills', 'coordinate', 'SKILL.md');
-  for (const prompt of ['Priority change', 'Rule change', 'Question']) assert.ok(coordinate.includes(`| ${prompt} |`), prompt);
-  assert.match(coordinate, /answer each reminder in one line/);
-  const s = section(null);
-  assert.match(s, /Keep the main chat free/);
-  assert.match(s, /a main chat that isn't ready for the owner's next input is a failure/);
-  assert.match(s, /classifies the input \(a new item, a change of direction, a priority change, a rule change or a question\)/);
-  assert.match(s, /never creates a second one/);
-  assert.match(s, /answer each reminder in one line/);
+  const coord = read('skills', 'coordinate', 'SKILL.md');
+  assert.match(entry, /\| Main chat \| Talks to the owner[^|]*Always ready for the next prompt\. \| Runs commands, builds, tests, subagents, polls, waits or launches\. Rolls over\. \|/);
+  assert.match(entry, /\*\*The main chat never rolls over\.\*\*/);
+  assert.match(coord, /\*\*The owner's main chat never rolls over\.\*\*/);
+  assert.match(coord, /\*\*To the owner's main chat only\*\*, and only: a decision only the owner can make, something new ready to try, or a safety blocker\. At most 3 plain lines/);
+  assert.match(coord, /never create a second one/);
 });
 
-test('sub-chats keep the main chat quiet: three reasons, three plain lines, no routine notes, retired coordinators ignored', () => {
-  const coordinate = read('skills', 'coordinate', 'SKILL.md');
-  assert.match(coordinate, /## Messages and the main chat/);
-  assert.match(coordinate, /1\. a decision only the owner can make;\n2\. something new ready for the owner to try[^\n]*;\n3\. a safety blocker/);
-  assert.match(coordinate, /\*\*at most 3 plain lines\*\*, with no IDs or jargon/);
-  assert.match(coordinate, /acknowledgements, milestones, dispatch notes, transfer notices, progress/);
-  assert.match(coordinate, /doesn't acknowledge stale or routine notes/);
-  assert.match(coordinate, /Messages from a retired coordinator are ignored/);
-  assert.match(coordinate, /Every worker assignment and every handoff carries it/);
-  assert.match(coordinate, /the main chat doesn't re-verify routine deliveries/);
-  for (const [name, text] of [['orchestrate', read('skills', 'orchestrate', 'SKILL.md')], ['section', section(null)], ['README', read('README.md')], ['AGENTS', read('AGENTS.md')]]) {
-    assert.match(text, /decision only the owner can make|owner-only decision/, `${name}: owner decisions`);
-    assert.match(text, /something new ready to try/, `${name}: something to try`);
-    assert.match(text, /safety blocker/, `${name}: safety blockers`);
-    assert.match(text, /at most 3 plain lines/, `${name}: three plain lines`);
-    assert.match(text, /retired coordinator/, `${name}: retired coordinators`);
-  }
-  for (const text of [read('templates', 'handoff.md'), read('templates', 'work-plan.md')]) assert.match(text, /at most 3 plain lines/);
-  assert.match(read('templates', 'handoff.md'), /retired coordinators: <IDs; their messages are ignored>/);
+test('coordinator churn is capped and nobody rolls over while the owner is steering', () => {
+  const coord = read('skills', 'coordinate', 'SKILL.md');
+  assert.match(coord, /\*\*One long-lived coordinator\.\*\* It hands over only at its context limits \(tool calls or compactions\), never on elapsed time alone, and never while the owner is steering/);
+  assert.match(read('skills', 'orchestrate', 'SKILL.md'), /idle time never counts/);
 });
 
-test('independent items run as parallel tracks, integrated one at a time and checked again together', () => {
+test('documentation diligence: owner input and every increment go into the project\'s documentation system', () => {
+  assert.match(read('skills', 'orchestrate', 'SKILL.md'), /\*\*Record\.\*\* Requirements, decisions and changed behaviour go into the project's documentation system in the same commit/);
+  assert.match(section(null), /- \*\*Documentation system:\*\* </);
+  assert.match(section(null), /- \*\*Owner's main chat:\*\* </);
+  assert.match(read('skills', 'progress-review', 'SKILL.md'), /\*\*Records:\*\* Is every owner requirement, attachment and reference in the project's documentation system/);
+});
+
+test('the hooks are mandatory and enforce the role and mode by mechanism', () => {
   const entry = read('skills', 'orchestrate', 'SKILL.md');
-  assert.match(entry, /## Parallel tracks/);
-  assert.match(entry, /don't depend on each other don't wait in one queue/);
-  assert.match(entry, /every item whose prerequisites are met is dispatched, not just the next in line/);
-  assert.match(entry, /its own working copy and branch \(for example a git worktree\), its own worker and its own completion record/);
-  assert.match(entry, /independent proof of concept and validate it in isolation/);
-  assert.match(entry, /second to land is rebased onto the first/);
-  assert.match(entry, /non-recursively/);
-  const coordinate = read('skills', 'coordinate', 'SKILL.md');
-  assert.match(coordinate, /\*\*The dependency map\.\*\*/);
-  assert.match(coordinate, /dispatch \*\*every ready item\*\*/);
-  assert.match(coordinate, /not just the next in line/);
-  const validation = read('skills', 'stage-validation', 'SKILL.md');
-  assert.match(validation, /## Integrating parallel tracks/);
-  assert.match(validation, /A proof of concept is validated in isolation/);
-  assert.match(validation, /run the checks again on the combined result/);
-  assert.match(validation, /second to land is rebased onto the first/);
-  assert.match(validation, /non-recursively: delete the link itself/);
-  for (const [name, text] of [['section', section(null)], ['README', read('README.md')], ['AGENTS', read('AGENTS.md')], ['work-plan template', read('templates', 'work-plan.md')]]) {
-    assert.match(text, /[Pp]arallel track/, `${name}: parallel tracks`);
-    assert.match(text, /dependency map/, `${name}: dependency map`);
-  }
-  for (const text of [read('skills', 'progress-review', 'SKILL.md'), read('agents', 'throughput-reviewer.agent.md')]) assert.match(text, /could run as parallel tracks/);
+  assert.match(entry, /^## Hooks \(MANDATORY\)/m);
+  assert.match(entry, /mark role main\|coordinator\|worker/);
+  assert.match(entry, /mark mode design\|ux-sooner\|assumption\|production-ready/);
+  assert.match(entry, /`\.agent-orchestration\/mode`/);
+  assert.match(section(null), /hooks in `\.github\/hooks\/` are \*\*mandatory\*\*[^\n]*never disable them or loosen their limits/);
 });
 
-test('product-behaviour questions are settled from reference products, and only the owner\'s own decisions are asked', () => {
-  const entry = read('skills', 'orchestrate', 'SKILL.md');
-  assert.match(entry, /declared \*\*reference products\*\* \(a project fact; for example/);
-  assert.match(entry, /record the source beside the decision/);
-  assert.match(entry, /irreversible actions, licences, publishing, real accounts, deleting their data/);
-  for (const [name, text] of [['execution-modes', read('skills', 'execution-modes', 'SKILL.md')], ['coordinate', read('skills', 'coordinate', 'SKILL.md')], ['section', section(null)], ['README', read('README.md')]]) {
-    assert.match(text, /reference products/, `${name}: reference products`);
-  }
-  assert.match(section(null), /irreversible actions, licences, publishing, real accounts, deleting their data/);
-  assert.match(section(null), /- \*\*Reference products:\*\* <the products whose current behaviour settles/, 'the installed facts ask for them');
-  const once = withSection('# P\n\n<!-- agent-orchestration:start -->\n## Old\n\n### Project facts (fill in; the skills read these)\n\n- **Product intent:** docs/spec.md\n- **Reviews and escalation:** review every 30 minutes\n<!-- agent-orchestration:end -->\n');
-  assert.match(once, /- \*\*Reference products:\*\* </, 'an older install gains the fact');
-});
-
-test('the registry, prompt triage and event-driven completion prevent duplicate writers', () => {
-  const coordinate = read('skills', 'coordinate', 'SKILL.md');
-  for (const prompt of ['Same area as a running writer', 'Independent of running work', 'Depends on running work', 'Correction']) {
-    assert.ok(coordinate.includes(`| ${prompt} |`), prompt);
-  }
-  for (const text of [coordinate, read('templates', 'work-plan.md'), read('templates', 'handoff.md')]) {
-    assert.match(text, /\| Task \| Owner worker \| Working copy \| State \| Trigger \| Completion signal \|/);
-    assert.match(text, /One writer per working copy/);
-    assert.match(text, /live worker list/);
-  }
-  assert.match(coordinate, /read \*\*unread messages and completion records, the live worker list, and the registry\/queue\*\*/);
-  assert.match(coordinate, /Record a launch as pending before dispatch/);
-  assert.match(coordinate, /An uncertain launch or missing reply is not permission to retry/);
-  assert.match(coordinate, /stale or duplicate report cannot release the queue twice/);
-  assert.match(coordinate, /Only the coordinator updates its registry/);
-  assert.match(coordinate, /Never wait in a loop/);
-  assert.match(coordinate, /If messaging is absent, workers write records/);
-  assert.match(coordinate, /without waiting for workers or stopping their work/);
-  assert.match(coordinate, /Worker clocks and limits are unchanged/);
-});
-
-test('portability names the VS Code lesson without promising concurrency in every tool', () => {
-  for (const text of [read('skills', 'orchestrate', 'SKILL.md'), read('README.md')]) {
-    assert.match(text, /VS Code agent sessions/);
-    assert.match(text, /until its turn ended/);
-    assert.match(text, /hooks fired between turns/);
-    assert.match(text, /Other tools.*may behave differently/);
-    for (const question of ['parallel conversations or agents', 'messages reach a busy conversation', 'notify on completion', 'registry persist', 'input.*mid-turn']) {
-      assert.match(text, new RegExp(question), question);
-    }
-    assert.match(text, /[Ss]ingle-threaded/);
-    assert.match(text, /queue in a file/);
-    assert.match(text, /owner to re-prompt/);
-  }
+test('lean: few MANDATORY markers, no narrative, and a word budget for skills and agents', () => {
+  const files = [...SKILLS.map((s) => ['skills', s, 'SKILL.md']), ['agents', 'throughput-reviewer.agent.md']];
+  const all = files.map((p) => read(...p)).join('\n');
+  assert.ok((all.match(/MANDATORY/g) ?? []).length <= 6, 'MANDATORY marks only the hard rules');
+  const words = all.split(/\s+/).filter(Boolean).length;
+  assert.ok(words <= 4500, `skills and agents total ${words} words (budget 4500)`);
+  assert.doesNotMatch(all, /learned in|VS Code agent sessions|we found that/i, 'no history or narrative');
+  assert.match(read('skills', 'coordinate', 'SKILL.md'), /^Log line: /m);
+  for (const p of files.filter((p) => p[1] !== 'coordinate')) assert.doesNotMatch(read(...p), /^Log line: /m, 'the log format lives in one place');
+  for (const p of files.filter((p) => p[1] !== 'stage-validation')) assert.doesNotMatch(read(...p), /full-suite trigger\.\*\*/, 'the trigger lives in one place');
 });
 
 test('execution control only: no product-reasoning skills or templates, and no dependence on another harness', () => {
@@ -287,26 +185,23 @@ test('relative links in the markdown resolve', () => {
   }
 });
 
-test('the review build is required everywhere it applies: validated commits only, isolated, kept running, named in reports and handoffs', () => {
+test('the review build is required everywhere it applies: validated commits only, isolated, opened before "ready", named in reports and handoffs', () => {
   const texts = {
     orchestrate: read('skills', 'orchestrate', 'SKILL.md'),
     'stage-validation': read('skills', 'stage-validation', 'SKILL.md'),
     coordinate: read('skills', 'coordinate', 'SKILL.md'),
     section: section(null),
     'handoff template': read('templates', 'handoff.md'),
-    'work-plan template': read('templates', 'work-plan.md'),
     README: read('README.md'),
   };
   for (const [name, text] of Object.entries(texts)) assert.match(text, /review build/i, `${name} names the review build`);
-  for (const name of ['orchestrate', 'stage-validation', 'section', 'README']) assert.match(texts[name], /validated commit/i, `${name}: only validated commits`);
-  for (const name of ['orchestrate', 'section', 'README']) assert.match(texts[name], /isolated/i, `${name}: isolated from development`);
-  assert.match(texts.orchestrate, /Review build\.\*\* Before the first increment/, 'orchestrate starts it');
-  assert.match(texts.orchestrate, /→ refresh the review build →/, 'the loop refreshes it');
-  assert.match(texts['stage-validation'], /## The review build/);
-  assert.match(texts.coordinate, /Name the review build in every status report/);
-  assert.match(texts.coordinate, /\*\*Review build:\*\* where it is/, 'the handoff names it');
-  assert.match(texts['handoff template'], /## Review build/);
-  assert.match(section(null), /- \*\*Review build:\*\* <how to start and refresh it/, 'the installed facts ask for it');
+  const sv = texts['stage-validation'];
+  assert.match(sv, /## The review build/);
+  assert.match(sv, /Built from the last validated commit only, in its own checkout/);
+  assert.match(sv, /named, with how to open it, in every report and handoff/);
+  assert.match(sv, /open that build yourself, reach the change through the normal UI \(not behind a flag\)/);
+  assert.match(texts.coordinate, /the review build and how to open it/, 'the handoff names it');
+  assert.match(texts.section, /- \*\*Review build:\*\* <how to start and refresh it/, 'the installed facts ask for it');
 });
 
 test('a re-run adds a fact the harness gained since to filled-in facts, keeping every filled-in value', () => {
@@ -315,7 +210,7 @@ test('a re-run adds a fact the harness gained since to filled-in facts, keeping 
   assert.match(once, /- \*\*Product intent:\*\* docs\/spec\.md/);
   assert.match(once, /- \*\*Progress log:\*\* ~\/logs\/p\.log/);
   assert.match(once, /- \*\*Review build:\*\* <how to start/);
-  assert.match(once, /- \*\*Coordinator registry:\*\* <session-store location/);
+  assert.match(once, /- \*\*Coordinator registry:\*\* <where the registry is/);
   assert.ok(once.indexOf('**Review build:**') < once.indexOf('**Reviews and escalation:** review every 20 minutes'), 'added before the last fact');
   assert.equal((once.match(/\*\*Review build:\*\*/g) ?? []).length, 1);
   const filled = once.replace(/- \*\*Review build:\*\* <[^\n]*/, '- **Review build:** a worktree at the last validated commit, port 4000')

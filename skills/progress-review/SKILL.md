@@ -1,60 +1,24 @@
 ---
 name: progress-review
-description: Use about every 30 minutes of running work, at the end of each work interval, and whenever progress stalls (the same failure twice, no new evidence, scope growing, the owner waiting). Checks whether the work is producing useful, validated progress, finds waste, and decides to keep course, adjust or change course - switching mode, cutting scope or trying another approach.
+description: Use about every 30 active minutes of running work (the session clock asks), at the end of each time-box, and whenever progress stalls - the same failure twice, no new evidence, scope growing, the owner waiting. Checks whether the work is producing useful, validated progress the owner can see, finds waste and rule breaks, and decides to keep course, adjust or change course.
 ---
 
-# Progress review: keep course, adjust, or change course
+# Progress review
 
-About every 30 minutes of running work, stop briefly and ask whether this is still the fastest path to something the owner can use. The interval is a project fact; 30 minutes is the default. Review at the end of every work interval too, and at once when a stall signal appears.
+A separate pass, by the `throughput-reviewer` agent where there is one, or by you, answering the questions below from evidence (the log, the registry, commits, the review build), not memory.
 
-## How
+## Questions
 
-- **With sub-agents or custom agents:** run the `throughput-reviewer` agent (in this harness's `agents/`) and act on its top finding.
-- **Without them:** answer the questions below yourself, as a separate pass, from the evidence (the progress log, the commits, what's running and for how long), not from memory.
-- Either way, write the verdict as one progress log line. Read the registry/queue, unread messages and live worker list as evidence. A coordinator dispatches a longer review and ends its turn; it never waits on the reviewer in a loop.
-- **Scheduled and required:** the session clock (`orchestrate`) says when a review is due and keeps saying so until one is done. A due review comes before the next increment, never after it. Running the `throughput-reviewer` agent or loading this skill counts as the review; a review done some other way is marked with `node .github/hooks/orchestration-clock.mjs mark review`. Where the tool has no hooks, keep time by hand on the same schedule.
+1. **Visible:** What can the owner see or try now that they couldn't at the last review? If nothing, why?
+2. **Mode:** Does the work match its mode? Any test, CI wait or hardening before the owner approved the design is the top finding.
+3. **Main chat:** Has the main chat run a command, waited, or gone unanswered? Has any report gone elsewhere, or claimed "done" for unverified work?
+4. **Records:** Is every owner requirement, attachment and reference in the project's documentation system, and did each increment update it?
+5. **Waste:** What ran that didn't move the goal: checks naming no risk, repeated runs, scaffolding nobody can see, rebuilding what was approved?
+6. **Stall:** The same failure twice, no new evidence, scope grown past the increment, or the owner waiting longer than the mode promises?
+7. **Ownership:** One writer per working copy, one coordinator, no stale chat holding work?
+8. **Clock:** Was every reminder acted on, and are the hooks on? A missing clock or an ignored reminder is the top finding.
+9. **Next:** What's the fastest path to the next thing the owner can use?
 
-## The questions
+## Verdict
 
-Answer each with evidence:
-
-1. **Constraint:** what limits progress now? Is the work serving it? Are independent items waiting in one queue when they could run as parallel tracks?
-2. **Mode:** is the goal mode still the most valuable one? Working with the owner, are they getting something they can see within about 15 minutes? Unattended, is the most valuable item moving, inside its bounds, with a handoff in view?
-3. **Intervals:** is anything past its interval, or holding unmerged work older than about an hour?
-4. **Checks at the right moment:** did anything run the full test suite or any unnecessary test on an unapproved design (one the owner hasn't explicitly signed off on, UX and UI), or the full suite in "show me the UX sooner"? That breaks the MANDATORY rule (`orchestrate`): it's the top waste, reported first above every other finding, and the run stops. Before sign-off only the build, the type check and the static view check are allowed. Otherwise, is anything running checks this stage doesn't need (a full suite for a style fix, hardening a prototype), or skipping checks it does need (security, data integrity, the live deploy)?
-5. **Quality on the first try:** did the owner have to point out something basic that checking before showing would have caught?
-6. **Feedback latency:** what has the owner waited longest for, and why? Is the coordinator free to read new prompts, or stuck in implementation, long commands or a blocking wait? Have unread messages, the live worker list and the registry/queue been reconciled, with one writer per working copy and explicit triggers? Is the main chat quiet, hearing only owner decisions, things to try and safety blockers? Did any reply call the task-completion tool, say "Task completed", "Done" or "Completed", or show a completion summary for work that was only handed over, or is still running, queued or unverified? That breaks the MANDATORY rule (`orchestrate`): report it as a finding, and relabel the reply "Handed over" or "In progress".
-7. **Traced to intent:** does the work trace to the product intent or the stated goal, or has it drifted into something nobody asked for?
-8. **Waste:** what was done since the last review that didn't move the plan or the owner's experience?
-9. **Session cost:** how long has this session run, how many tool calls and context compactions has it had, and is the editor or the agent slowing down? Is the session clock running, and was every reminder acted on? Past the session limit, roll over to a new session at the next safe point (`coordinate`); a coordinator transfers its registry to one successor without restarting workers or resetting their clocks. A missing clock or an ignored reminder is the top finding.
-
-## Stall signals
-
-Review at once, without waiting for the interval, when:
-
-- the same failure, or the same kind of fix, has come back twice;
-- there's been no new evidence (a passing check, a result, something shown) for a whole interval;
-- the scope has grown past the increment that was planned;
-- the owner has been waiting on something longer than the mode promises;
-- the coordinator is holding a turn open, messages are unread, or two workers claim the same working copy;
-- the main chat is filling with routine notes, or the owner has had to say so;
-- independent items are waiting in one queue behind each other;
-- you're about to do foundational work that no current goal needs;
-- the session is past its limit, or the editor or the agent is visibly slowing down.
-
-## Changing course
-
-| Finding | Change |
-|---|---|
-| The same approach failed twice | Try a different approach, not a third attempt at the same one; or prove the risky part on its own first |
-| The goal's end condition is met | Switch goal mode, and log why |
-| The increment keeps growing | Cut it to the smallest piece that still produces something usable, and queue the rest |
-| Blocked on something only the owner can provide | Record it with options and a recommendation, and move to the next unblocked item |
-| Checks don't match the stage | Drop what the stage doesn't need, or add what it does, and say so |
-| The coordinator is blocked or ownership conflicts | Stop the blocking wait, read pending messages and live state, resolve duplicate writers, update the registry and end the turn |
-| The main chat is clogged or busy | Move execution and verification to a coordinator or workers; stop routine messages to the main chat and route them to the coordinator and records |
-| Independent items wait in one queue | Mark them ready in the dependency map and dispatch each as a parallel track in its own working copy |
-| Drifted from the intent | Stop, return to the last traced item, and note what was set aside |
-| The session is past its limit, or slowing down | Roll over to a new session at the next safe point (`coordinate`) |
-
-The output is a verdict (keep course, adjust, or change course), the top three changes ranked by expected gain in validated progress per unit of time, each with a concrete action, and one line for the progress log.
+**Keep course**, **adjust** (one named change) or **change course** (switch mode, cut scope, try another approach, or escalate). Act on the top finding before the next increment, and log one line: the verdict, the top finding and the action.
