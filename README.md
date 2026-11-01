@@ -8,6 +8,15 @@ It's a set of **skills** (instructions an agent loads when they apply), one **ag
 
 It decides **how** to do the work, not **what** is worth building. It reads product intent when a project has some (for example, from [agentic-craft](https://github.com/prabinpebam/agentic-craft)), and stays useful for code tasks that have no formal spec.
 
+## MANDATORY: no tests on unapproved designs
+
+Extremely strict, no exceptions, in every mode:
+
+- **NEVER run the full test suite or any unnecessary test on an unapproved design.** A design is unapproved until the owner has explicitly signed off on its UX and UI.
+- **NEVER run the full test suite in "show me the UX sooner" mode.**
+
+Before sign-off, only the build, the type check and the project's static check of view documents run. Nothing else: no end-to-end or journey tests, aggregate unit runs, captures, accessibility or render passes, benchmarks or CI waits. The owner's review is the test. A progress review reports any violation as the top waste.
+
 ## What's in it
 
 | Skill | Use it when | What it gives you |

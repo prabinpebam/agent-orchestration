@@ -9,11 +9,20 @@ Check what a change can affect, at the depth its stage needs. A prototype needs 
 
 **Workers run checks.** Implementation, builds, test suites, deploy watching and review-build refreshes belong to bounded workers, not the main coordinator chat. The coordinator reads completion evidence cheaply, sends missing checks back to a worker and releases queued work only when its trigger is met. It never waits in a loop or holds a turn open for results (`coordinate`).
 
+## MANDATORY first question: is the design approved?
+
+**Ask it before choosing any check. No exceptions; it overrides the tiers, their triggers and every project gate.**
+
+- **NEVER run the full test suite or any unnecessary test on an unapproved design.** A design is unapproved until the owner has explicitly signed off on its UX and UI.
+- **NEVER run the full test suite in "show me the UX sooner" mode.**
+- **Unapproved design → only the build, the type check and the project's static check of view documents.** Nothing else: no end-to-end or journey tests, no aggregate unit runs, no capture runs or capture workflows, no accessibility or render passes, no benchmarks, no CI waits. The owner's review of the review build is the test.
+- **Approved design, or a change with no design in it →** the tiers below.
+
 ## Evidence by goal
 
 | Goal mode | Evidence that counts | Not needed yet |
 |---|---|---|
-| Show me the UX sooner | It runs; the main flow works by hand; a screenshot or recording of each key screen, looked at; a Try it | Broad tests, full accessibility audits, benchmarks |
+| Show me the UX sooner | It builds; the type check and the static view check pass; the main flow works by hand; a Try it | **Forbidden, not just deferred:** the full suite, any other test, captures, accessibility and render passes, benchmarks, CI waits |
 | Prove the risky assumption | The result against the stated criterion, with the run, the numbers or the observation | Tests beyond what makes the result trustworthy |
 | Make this production-ready | Every Definition of Done row or done-when line with its proof, and the tiers below up to what the change needs | Nothing that the change can affect |
 
@@ -21,7 +30,7 @@ When the project has Definitions of Done, they say what must be proven; this ski
 
 ## Validation tiers
 
-Pick the lowest tier that covers the change; escalate only for the reasons in tier 3. (This is test impact analysis: run what a change can affect, and keep the full suite for milestones.)
+Pick the lowest tier that covers the change; escalate only for the reasons in tier 3. (This is test impact analysis: run what a change can affect, and keep the full suite for milestones.) The tiers apply only once the design is approved, or when the change has no design in it (above).
 
 | Tier | When | What |
 |---|---|---|
@@ -30,7 +39,7 @@ Pick the lowest tier that covers the change; escalate only for the reasons in ti
 | 2 | A change a unit test can't see: rendering, input, styles, timing, integration | Only the affected end-to-end tests, by title or group. For visual changes, one screenshot of the affected view, looked at |
 | 3 | Only on a trigger below | The full unit suite, the type check, the production build with its budgets, the full end-to-end suite |
 
-Tier 3 triggers: several features since the last full run, or before a release or milestone; a behaviour change to shared infrastructure that the import graph can't bound; dependency or build changes (always the production build with budgets); the production or security path; a targeted run that failed for a reason you don't understand. The triggers hold in every attention mode; working with the owner changes when the broad checks run (before merge or release, not before showing), not whether.
+Tier 3 triggers: several features since the last full run, or before a release or milestone; a behaviour change to shared infrastructure that the import graph can't bound; dependency or build changes (always the production build with budgets); the production or security path; a targeted run that failed for a reason you don't understand. The triggers hold in every attention mode; working with the owner changes when the broad checks run (before merge or release, not before showing), not whether. **No trigger ever applies to an unapproved design or in "show me the UX sooner" mode.**
 
 **Performance checks:** run the project's benchmark against its baseline after a change to what a person waits on (the server, data loading, media handling, a layout or a page's loading), before a release, and for any claim that something is faster; the budgets run with every production build. Copy and docs changes need neither.
 
@@ -81,7 +90,7 @@ Bugs and gaps found while building go in the work plan under "Found on the way":
 
 Before showing the owner anything visual, check the basics for what's being shown, so they never have to point them out. What they're shown is the review build, at a validated commit:
 
-- **Show me the UX sooner:** the flow is reachable, the words are real, nothing is broken or blank, and it works at the size they'll view it.
+- **Show me the UX sooner:** the flow is reachable, the words are real, nothing is broken or blank, and it works at the size they'll view it. Checked by opening it, never by a test run (above).
 - **Make this production-ready:** the component's whole anatomy, in light and dark, at rest, hover, active, focus and disabled (plus error, empty and loading where they exist), on a small screen and with the keyboard, with one enlarged capture looked at. Add a test so the same flaw can't come back.
 
 ## Branches, merges, deploys

@@ -5,6 +5,8 @@ description: Use when choosing, switching or explaining how to run a piece of wo
 
 # Execution modes
 
+> **MANDATORY, no exceptions, in every mode:** NEVER run the full test suite or any unnecessary test on an unapproved design (one the owner hasn't explicitly signed off on, UX and UI). NEVER run the full test suite in "show me the UX sooner" mode. Before sign-off only the build, the type check and the project's static check of view documents run (`orchestrate`).
+
 A mode is a **goal** plus an **attention** level. The goal says what kind of result comes next; the attention says how the owner is involved. "Show me the UX sooner, keep going unattended" is a mode; so is "make this production-ready, work with me".
 
 ## Roles in every mode
@@ -20,7 +22,8 @@ Produce something the owner can play with or review early, so they can judge the
 - **First:** the main flow, end to end, on real screens with realistic content. Fixtures, fakes and stubs behind it are fine.
 - **Keep:** whatever affects the judgement: the real words, the real layout at real sizes, the waits a person would feel, the states the flow can reach.
 - **Defer:** persistence, rare edge cases, full accessibility and performance work, refactoring, broad tests. Write every shortcut on the work plan's **shortcuts** list so production work can find them.
-- **Evidence:** the owner can reach it (a link, a command, a build) with a **Try it** that says what to look at; you've looked at a screenshot or recording of each key screen first.
+- **MANDATORY checks, and only these:** the build, the type check and the project's static check of view documents. **NEVER the full test suite in this mode,** and nothing else either: no end-to-end or journey tests, no aggregate unit runs, no capture runs, no accessibility or render passes, no benchmarks, no CI waits. The design is unapproved until the owner explicitly signs off on its UX and UI; their review is the test.
+- **Evidence:** the owner can reach it (a link, a command, a build) with a **Try it** that says what to look at; it builds, and the allowed checks pass; you've opened it and walked the main flow by hand.
 - **Ends when:** the owner gives a verdict (keep, change, drop), or the questions it was built to answer are answered. Then switch: production-ready for what's kept, or another round.
 
 ### Prove the risky assumption
@@ -45,7 +48,7 @@ Bring validated work up to the project's quality bar: correct, tested, accessibl
 ### Choosing and switching
 
 - One goal per task at a time. When a request mixes them ("show me, and make it solid"), do them in order: show, then harden. Independent workers may have different goals.
-- Don't harden what isn't validated: no production work on a concept the owner hasn't seen, unless they ask for it.
+- Don't harden what isn't validated: no production work on a concept the owner hasn't seen, unless they ask for it. A design enters "make this production-ready", and its broader tests, only after the owner has explicitly signed off on its UX and UI.
 - Don't build on an unproven belief that could sink the plan; prove it first.
 - Recheck the goal at every progress review. Switch when its end condition is met, or when evidence says another goal is worth more now. Log the switch and why.
 
@@ -56,8 +59,8 @@ Bring validated work up to the project's quality bar: correct, tested, accessibl
 The owner is collaborating: trying things, giving feedback, deciding.
 
 - About **15 minutes from report to something they can see.** Focused increments, one change at a time.
-- Before showing each increment, only the fast checks, 5 minutes or less: the unit tests the change touches and the one end-to-end test that covers it. No full suite or benchmark between the owner and the next thing they'll see.
-- Tier-3 triggers (`stage-validation`) still hold: when the change touches a release, dependencies, shared infrastructure, or the production or security path, run those broad checks before it's merged or released, in the background while the owner reviews when the tool allows, otherwise at the end of the session.
+- Before showing each increment, only the fast checks, 5 minutes or less: the unit tests the change touches and the one end-to-end test that covers it. No full suite or benchmark between the owner and the next thing they'll see. **For an unapproved design, not even those:** only the build, the type check and the static view check.
+- Tier-3 triggers (`stage-validation`) still hold for approved work, never for an unapproved design: when the change touches a release, dependencies, shared infrastructure, or the production or security path, run those broad checks before it's merged or released, in the background while the owner reviews when the tool allows, otherwise at the end of the session.
 - Ship where they'll see it, and say exactly what to reopen or reload.
 - Triage new feedback against live state (`orchestrate`, `coordinate`): steer the current writer or queue its follow-up; start independent work in an isolated copy; queue dependencies with triggers; steer or stop for corrections; update the plan and reply in one to three lines. Settle how something should behave from the reference products or prior decisions, and record the source. Ask only what's the owner's to decide; offer choices with a recommendation first.
 

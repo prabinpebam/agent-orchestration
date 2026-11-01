@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Use at the start of any multi-step task, when triaging new prompts against running workers and queued work, and always when the owner is away or says "unattended". The entry point to agent-orchestration - keeps the main chat free for triage only, separates coordinator and worker roles, triages every owner prompt into the plan, runs independent items as parallel tracks, picks an execution mode, sets bounds, runs the plan-act-check-record-review loop under the mandatory session clock, and routes to modes, stage validation, progress reviews and coordination.
+description: Use at the start of any multi-step task, when triaging new prompts against running workers and queued work, and always when the owner is away or says "unattended". The entry point to agent-orchestration - keeps the main chat free for triage only, separates coordinator and worker roles, triages every owner prompt into the plan, runs independent items as parallel tracks, picks an execution mode, sets bounds, runs the plan-act-check-record-review loop under the mandatory session clock, and routes to modes, stage validation, progress reviews and coordination. Holds the mandatory rule: no full or unnecessary tests on unapproved designs, and no full suite in show me the UX sooner.
 ---
 
 # Orchestrate: run the work, watch it, adapt
@@ -10,6 +10,19 @@ How an agent carries out work: which mode, which checks, how progress is recorde
 ## The measure
 
 **Useful, validated outcomes per unit of time.** Not tasks completed, not checklists ticked, not foundations laid before anything needs them. The owner's time and attention are the constraint: never make them wait on checks a change doesn't need, and never make them catch basic mistakes.
+
+## MANDATORY: no tests on unapproved designs
+
+**Extremely strict. No exceptions.** No mode, deadline, validation tier, tier-3 trigger, project convention, merge gate or instruction to "make it solid" overrides these two rules. Only the owner's explicit sign-off ends the first; only leaving the mode ends the second.
+
+1. **NEVER RUN THE FULL TEST SUITE, OR ANY UNNECESSARY TEST, ON AN UNAPPROVED DESIGN.**
+2. **NEVER RUN THE FULL TEST SUITE IN "SHOW ME THE UX SOONER" MODE.**
+
+- **Unapproved** means the owner hasn't explicitly signed off on the UX and UI of that design. Silence, a passing check, a merge, a review build refresh, another agent's opinion or your own judgement is not sign-off. When in doubt, it's unapproved.
+- **Allowed before sign-off, and nothing else:** the build, the type check, and the project's static check of view documents (where the project has one).
+- **Forbidden before sign-off:** end-to-end or journey tests, aggregate unit runs (the whole unit suite or a package's suite), screenshot or capture runs and capture workflows, accessibility or render passes, benchmarks, and waiting on CI. Not "just one journey", not "in the background", not "while the owner reviews".
+- **The owner's review is the test.** Get the design in front of them (the review build, with a Try it) and wait for their verdict. After sign-off, run the checks the change needs (`stage-validation`).
+- **A violation is the top finding** of every progress review (`progress-review`, `throughput-reviewer`). Stop the run at once, record it, and don't count its results as progress.
 
 ## Keep the main chat free
 
@@ -137,9 +150,11 @@ Without a tool that can keep a process running, build the review checkout and gi
 
 ## Rules that hold everywhere
 
+**MANDATORY, above every rule below, no exceptions:** NEVER run the full test suite or any unnecessary test on an unapproved design, and NEVER run the full test suite in "show me the UX sooner" mode. Before the owner explicitly signs off on the UX and UI, only the build, the type check and the project's static check of view documents run (see "MANDATORY: no tests on unapproved designs" above).
+
 1. **Validated outcomes, not activity.** Each increment ends in something the owner can use, or something learned that changes a decision.
 2. **No premature foundations.** Build infrastructure, abstractions and hardening when the current goal needs them, not before the direction is validated.
-3. **Smallest check that covers the change.** Scope checks to what the change can affect; escalate for stated reasons.
+3. **Smallest check that covers the change.** Scope checks to what the change can affect; escalate for stated reasons, never on an unapproved design.
 4. **Decide, don't ask, when you can.** Ask only what can't be decided from context. Settle how something should behave from the project's declared **reference products** (a project fact; for example "the current Figma behaviour first, then Microsoft Word's") or its prior decisions: check their current official docs or the product itself, and record the source beside the decision. Ask the owner only for decisions that are theirs: irreversible actions, licences, publishing, real accounts, deleting their data. Otherwise choose the most reasonable option, write the assumption down, and keep going.
 5. **Evidence or it didn't happen.** Report what was checked and how, and say what wasn't.
 6. **Durable records.** Anything another session or agent needs is written down: the work plan, the progress log, the handoff. Memory doesn't survive.

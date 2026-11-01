@@ -56,7 +56,33 @@ test('the throughput reviewer asks the same questions as the progress-review ski
   assert.ok(fromAgent.length >= 8);
   assert.deepEqual(fromAgent, labels(read('skills', 'progress-review', 'SKILL.md')));
   const question = (text, n) => text.split('\n').find((line) => line.startsWith(`${n}. `));
-  for (const n of [6, 9]) assert.equal(question(read('agents', 'throughput-reviewer.agent.md'), n), question(read('skills', 'progress-review', 'SKILL.md'), n));
+  for (const n of [4, 6, 9]) assert.equal(question(read('agents', 'throughput-reviewer.agent.md'), n), question(read('skills', 'progress-review', 'SKILL.md'), n));
+});
+
+test('MANDATORY: no full or unnecessary tests on unapproved designs, and no full suite in show me the UX sooner', () => {
+  const carriers = {
+    orchestrate: read('skills', 'orchestrate', 'SKILL.md'),
+    'execution-modes': read('skills', 'execution-modes', 'SKILL.md'),
+    'stage-validation': read('skills', 'stage-validation', 'SKILL.md'),
+    'progress-review': read('skills', 'progress-review', 'SKILL.md'),
+    'throughput-reviewer': read('agents', 'throughput-reviewer.agent.md'),
+    README: read('README.md'),
+    section: section(null),
+  };
+  for (const [name, text] of Object.entries(carriers)) {
+    assert.match(text, /MANDATORY/, `${name} says MANDATORY`);
+    assert.match(text, /NEVER run the full test suite or any unnecessary test on an unapproved design|full test suite or any unnecessary test on an unapproved design/i, `${name}: unapproved designs`);
+    assert.match(text, /full (test )?suite in "show me the UX sooner"/i, `${name}: show me the UX sooner`);
+  }
+  for (const name of ['orchestrate', 'stage-validation', 'README', 'section']) {
+    assert.match(carriers[name], /only the build, the type check and the project's static check of view documents/i, `${name}: what's allowed before sign-off`);
+  }
+  assert.match(carriers.orchestrate, /explicitly signed off on the UX and UI/);
+  assert.match(carriers.orchestrate, /No exceptions/);
+  assert.match(carriers['throughput-reviewer'], /top waste/);
+  const entry = carriers.orchestrate;
+  assert.ok(entry.indexOf('## MANDATORY: no tests on unapproved designs') < entry.indexOf('## Keep the main chat free'), 'near the top of orchestrate');
+  assert.match(entry.slice(entry.indexOf('## Rules that hold everywhere')), /^\*\*MANDATORY, above every rule below, no exceptions:\*\*/m);
 });
 
 test('the free coordinator stays separate from execution in all skills and installed instructions', () => {
