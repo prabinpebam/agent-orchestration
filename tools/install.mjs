@@ -44,11 +44,12 @@ export function section(/** @type {string | null} */ facts) {
 - **Coordinator registry:** <where the registry is (readable by a successor), and how workers report completion>
 - **Branches and merges:** <work branch or worktree> · merge with \`<…>\` · deploy watched with \`<…>\` · the agent may: <merge, push, deploy, or none: the owner does> · must never break: <the live product, an API>
 - **Review build:** <how to start and refresh it (its own checkout at the last validated commit, its own port or user-data folder, demo data), and where it is (an address, or the app and how to open it)>
+- **Owner review cadence:** something the owner can open and judge at least every 60 active minutes, ideally several times an hour (never longer; the clock enforces it) · where the owner reviews: <links to the review build, prototype or docs> · mark each with \`node .github/hooks/orchestration-clock.mjs mark reviewable "<link>"\`
 - **Reviews and escalation:** review every <30> active minutes · roll over after <90> active minutes, <300> tool calls or <2> compactions (the clock's limits, in its hook configuration) · always escalate: <what waits for the owner>`;
   return `${START}
 ## Orchestration (agent-orchestration harness)
 
-This project runs work with the [agent-orchestration](https://github.com/prabinpebam/agent-orchestration) skills. Start with the \`orchestrate\` skill: its **pre-action checklist** comes before every tool call and reply. It routes to \`execution-modes\` (the mode ladder: strict design, show me the UX sooner, prove the risky assumption, make this production-ready; work with me or keep going unattended), \`stage-validation\`, \`progress-review\` and \`coordinate\`. Agent: \`throughput-reviewer\`. The hooks in \`.github/hooks/\` are **mandatory**: the session clock (\`${CLOCK_HOOKS}\`) schedules reviews and roll-overs on active time, and the guard (\`${GUARD_HOOKS}\`) denies what the session's role and mode forbid; never disable them or loosen their limits without the owner. Project rules below and in this file win over the kit's general rules.
+This project runs work with the [agent-orchestration](https://github.com/prabinpebam/agent-orchestration) skills. Start with the \`orchestrate\` skill: its **pre-action checklist** comes before every tool call and reply. It routes to \`execution-modes\` (the mode ladder: strict design, show me the UX sooner, prove the risky assumption, make this production-ready; work with me or keep going unattended), \`stage-validation\`, \`progress-review\` and \`coordinate\`. Agent: \`throughput-reviewer\`. **Mandatory: the owner gets something they can review at least every 60 active minutes**, ideally several times an hour, so a rejection costs at most an hour: size every item to that, split it or carve out a standalone proof of concept when it can't, and when the hour passes with nothing reviewable, cut scope and ship the smallest slice before starting anything else. The hooks in \`.github/hooks/\` are **mandatory**: the session clock (\`${CLOCK_HOOKS}\`) schedules reviews, reviewable deliveries and roll-overs on active time, and the guard (\`${GUARD_HOOKS}\`) denies what the session's role and mode forbid; never disable them or loosen their limits without the owner. Project rules below and in this file win over the kit's general rules.
 
 ${mergeFacts(facts, defaultFacts)}
 ${END}`;
@@ -111,7 +112,7 @@ function hookConfig(/** @type {string} */ target, /** @type {boolean} */ global,
   const dir = hooksDir(global ? homedir() : target, global);
   const script = global ? join(dir, CLOCK).replace(/\\/g, '/') : `.github/hooks/${CLOCK}`;
   const cmd = `node ${global ? `"${script}"` : script}`;
-  const env = { AO_REVIEW_MIN: '30', AO_ROLLOVER_MIN: '90', AO_ROLLOVER_TOOLS: '300', AO_ROLLOVER_COMPACTIONS: '2', AO_CLOCK_CMD: cmd };
+  const env = { AO_REVIEW_MIN: '30', AO_DELIVER_WARN_MIN: '40', AO_DELIVER_MIN: '60', AO_ROLLOVER_MIN: '90', AO_ROLLOVER_TOOLS: '300', AO_ROLLOVER_COMPACTIONS: '2', AO_CLOCK_CMD: cmd };
   const entry = (/** @type {string} */ event) => [{ type: 'command', command: `${cmd} ${event}`, timeoutSec, env }];
   const json = { version: 1, hooks: Object.fromEntries(events.map((e) => [e, entry(e)])) };
   return { file: join(dir, name), text: `${JSON.stringify(json, null, 2)}\n` };

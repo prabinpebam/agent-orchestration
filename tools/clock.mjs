@@ -12,11 +12,15 @@
  * every AO_REVIEW_MIN active minutes and a roll-over after AO_ROLLOVER_MIN active minutes, AO_ROLLOVER_TOOLS tool calls
  * or AO_ROLLOVER_COMPACTIONS compactions. The main chat never rolls over; a coordinator only at its context limits
  * (tool calls, compactions); nobody while a prompt arrived in the last AO_STEER_MIN minutes.
+ * Reviewable: tracks active time since the owner last got something reviewable (`mark reviewable`), reminds at
+ * AO_DELIVER_WARN_MIN (40) and requires action at AO_DELIVER_MIN (60) active minutes. That limit can only be tightened:
+ * a value above 60, or 0, falls back to 60. The main chat is never asked.
  * Guard (preToolUse): denies shell, subagent, poll and wait tools in a session marked `main`; denies builds, tests and
  * waits in a session marked `coordinator`; denies tests, end-to-end runs, benchmarks and CI waits in the modes `design`
  * and `ux-sooner` (from `mark mode` or the file `.agent-orchestration/mode` in the working folder).
  *
  *   node orchestration-clock.mjs mark <review | rollover> [--session <id>]
+ *   node orchestration-clock.mjs mark reviewable "<link or what the owner can open>" [--session <id>]
  *   node orchestration-clock.mjs mark role <main | coordinator | worker>
  *   node orchestration-clock.mjs mark mode <design | ux-sooner | assumption | production-ready>
  *   node orchestration-clock.mjs status [--session <id>]
@@ -34,10 +38,10 @@ export const ROLES = ['main', 'coordinator', 'worker'];
 export const MODES = ['design', 'ux-sooner', 'assumption', 'production-ready'];
 export const MODE_FILE = join('.agent-orchestration', 'mode');
 
-/** @typedef {{ reviewMin: number, renudgeMin: number, rolloverMin: number, rolloverTools: number, rolloverCompactions: number, idleMin: number, steerMin: number, cmd: string }} Config */
-/** @typedef {{ cwd: string, started: number, seen: number, active: number, tools: number, compactions: number, lastReview: number, reviewActive: number, reviewNudged: number, rolloverDue: number, rolloverNudged: number, rolloverBlocked: number, rolledOver: number, handedOverNudged: number, ownerSeen: number, role: string, mode: string }} State */
+/** @typedef {{ reviewMin: number, renudgeMin: number, rolloverMin: number, rolloverTools: number, rolloverCompactions: number, idleMin: number, steerMin: number, deliverMin: number, deliverWarnMin: number, cmd: string }} Config */
+/** @typedef {{ cwd: string, started: number, seen: number, active: number, tools: number, compactions: number, lastReview: number, reviewActive: number, reviewNudged: number, rolloverDue: number, rolloverNudged: number, rolloverBlocked: number, rolledOver: number, handedOverNudged: number, ownerSeen: number, role: string, mode: string, deliverAt: number, deliverActive: number, deliverWarned: number, deliverNudged: number, deliverBlocked: number }} State */
 
-export const DEFAULTS = /** @type {Config} */ ({ reviewMin: 30, renudgeMin: 5, rolloverMin: 90, rolloverTools: 300, rolloverCompactions: 2, idleMin: 5, steerMin: 10, cmd: 'node .github/hooks/orchestration-clock.mjs' });
+export const DEFAULTS = /** @type {Config} */ ({ reviewMin: 30, renudgeMin: 5, rolloverMin: 90, rolloverTools: 300, rolloverCompactions: 2, idleMin: 5, steerMin: 10, deliverMin: 60, deliverWarnMin: 40, cmd: 'node .github/hooks/orchestration-clock.mjs' });
 
 /** The limits, from the hook's environment. */
 export function config(/** @type {Record<string, string | undefined>} */ env = process.env) {
@@ -45,7 +49,13 @@ export function config(/** @type {Record<string, string | undefined>} */ env = p
     const v = Number(env[k]);
     return env[k] != null && env[k] !== '' && Number.isFinite(v) && v >= 0 ? v : d;
   };
+  // The owner's limit: configuration may tighten it, never loosen or turn it off.
+  const deliver = n('AO_DELIVER_MIN', DEFAULTS.deliverMin);
+  const deliverMin = deliver > 0 && deliver <= DEFAULTS.deliverMin ? deliver : DEFAULTS.deliverMin;
+  const warn = n('AO_DELIVER_WARN_MIN', DEFAULTS.deliverWarnMin);
   return {
+    deliverMin,
+    deliverWarnMin: warn > 0 && warn < deliverMin ? warn : Math.round((deliverMin * 2) / 3),
     reviewMin: n('AO_REVIEW_MIN', DEFAULTS.reviewMin),
     renudgeMin: n('AO_RENUDGE_MIN', DEFAULTS.renudgeMin),
     rolloverMin: n('AO_ROLLOVER_MIN', DEFAULTS.rolloverMin),
@@ -58,8 +68,17 @@ export function config(/** @type {Record<string, string | undefined>} */ env = p
 }
 
 export function fresh(/** @type {string} */ cwd, /** @type {number} */ now) {
-  return /** @type {State} */ ({ cwd, started: now, seen: now, active: 0, tools: 0, compactions: 0, lastReview: now, reviewActive: 0, reviewNudged: 0, rolloverDue: 0, rolloverNudged: 0, rolloverBlocked: 0, rolledOver: 0, handedOverNudged: 0, ownerSeen: 0, role: '', mode: '' });
+  return /** @type {State} */ ({ cwd, started: now, seen: now, active: 0, tools: 0, compactions: 0, lastReview: now, reviewActive: 0, reviewNudged: 0, rolloverDue: 0, rolloverNudged: 0, rolloverBlocked: 0, rolledOver: 0, handedOverNudged: 0, ownerSeen: 0, role: '', mode: '', deliverAt: 0, deliverActive: 0, deliverWarned: 0, deliverNudged: 0, deliverBlocked: 0 });
 }
+
+/** Records that the owner can now review something: the hour starts again. */
+export const delivered = (/** @type {State} */ s, /** @type {number} */ now) => Object.assign(s, { deliverAt: now, deliverActive: s.active ?? 0, deliverWarned: 0, deliverNudged: 0, deliverBlocked: 0 });
+
+/** Active time since the owner last got something reviewable (since the session started, before the first). */
+export const sinceDelivery = (/** @type {State} */ s) => Math.max(0, (s.active ?? 0) - (s.deliverActive ?? 0));
+
+export const deliverSteps = (/** @type {Config} */ c) =>
+  `Cut scope and ship the smallest slice the owner can open and judge (a running view, the review build, a filled-in doc section, a standalone proof of concept, or a decision packet with evidence); start no other work first. Then run \`${c.cmd} mark reviewable "<link>"\`. A miss is the top finding of the next progress review.`;
 
 const hhmm = (/** @type {number} */ t) => new Date(t).toTimeString().slice(0, 5);
 const mins = (/** @type {number} */ ms) => Math.max(0, Math.round(ms / MIN));
@@ -109,7 +128,7 @@ const RUN = String.raw`(?:^|[;&|(]\s*|\b(?:npx|exec|dlx|run|uv\s+run)\s+)`;
 export const HEAVY = new RegExp(String.raw`${RUN}(?:vitest|jest|mocha|pytest|cypress\s+run|playwright\s+test|node\s+--test)(?![\w-])|\b(?:pnpm|npm|yarn|bun)\b[^;&|\n]*?\s(?:run\s+)?(?:test|bench|e2e)(?::[\w:-]+)?(?=\s|$|["');&|])|\b(?:dotnet|cargo|go)\s+test\b|\bgh\s+run\s+watch\b|\bgh\s+pr\s+checks\b[^;&|\n]*--watch`, 'i');
 const BUILD = /\b(?:pnpm|npm|yarn|bun)\b[^;&|\n]*?\s(?:run\s+)?build(?::[\w:-]+)?(?=\s|$|["');&|])|\b(?:dotnet|cargo)\s+build\b|\bmsbuild\b/i;
 const WAIT = /\b(?:Start-Sleep|sleep|Wait-Process|Wait-Job)\b|\btimeout\s+\/t\b/i;
-const MARK = /orchestration-clock\.mjs["']?\s+(?:mark\s+(role|mode)\s+([\w-]+)|status)\b/;
+const MARK = /orchestration-clock\.mjs["']?\s+(?:mark\s+(role|mode)\s+([\w-]+)\b|mark\s+(reviewable)\s+["']?[^\s"']|status\b)/;
 
 const deny = (/** @type {string} */ reason) => ({ permissionDecision: 'deny', permissionDecisionReason: `Guard (MANDATORY): ${reason}` });
 
@@ -121,6 +140,7 @@ function guard(/** @type {State} */ s, /** @type {{ toolName?: string, toolArgs?
   if (mark) {
     if (mark[1] === 'role' && ROLES.includes(mark[2]) && !/--session/.test(cmd)) s.role = mark[2];
     if (mark[1] === 'mode' && MODES.includes(mark[2]) && !/--session/.test(cmd)) s.mode = mark[2];
+    if (mark[3] && !/--session/.test(cmd)) delivered(s, s.seen);
     return {};
   }
   if (s.role === 'main' && MAIN_DENY.has(name)) return deny(`this is the owner's main chat: it never runs ${name}. Delegate it to a coordinator or worker chat and reply to the owner in one to three lines.`);
@@ -146,7 +166,7 @@ export function step(state, event, input, now, c) {
   s.seen = now;
   if (event === 'sessionStart') {
     const limits = [c.rolloverMin && `${c.rolloverMin} active minutes`, c.rolloverTools && `${c.rolloverTools} tool calls`, c.rolloverCompactions && `${c.rolloverCompactions} compactions`].filter(Boolean).join(', ');
-    return { state: s, output: { additionalContext: `Session clock on (agent-orchestration; mandatory): a progress review every ${c.reviewMin} active minutes; roll over after ${limits || 'no limit'} (idle time not counted; the main chat never rolls over). Mark this session's role once: \`${c.cmd} mark role main|coordinator|worker\`, and the mode with \`${c.cmd} mark mode design|ux-sooner|assumption|production-ready\`; the guard enforces both. Act on every reminder; never disable the clock or loosen its limits.` } };
+    return { state: s, output: { additionalContext: `Session clock on (agent-orchestration; mandatory): a progress review every ${c.reviewMin} active minutes; something the owner can review at least every ${c.deliverMin} active minutes (mark each with \`${c.cmd} mark reviewable "<link>"\`); roll over after ${limits || 'no limit'} (idle time not counted; the main chat never rolls over). Mark this session's role once: \`${c.cmd} mark role main|coordinator|worker\`, and the mode with \`${c.cmd} mark mode design|ux-sooner|assumption|production-ready\`; the guard enforces both. Act on every reminder; never disable the clock or loosen its limits.` } };
   }
   if (event === 'userPromptSubmitted') {
     s.ownerSeen = now;
@@ -161,9 +181,15 @@ export function step(state, event, input, now, c) {
   if (event === 'agentStop') {
     if (s.rolledOver || input.stopHookActive || steering) return { state: s, output: {} };
     const why = rolloverReason(s, now, c);
-    if (!why || s.rolloverBlocked) return { state: s, output: {} };
-    s.rolloverBlocked = now;
-    return { state: s, output: { decision: 'block', reason: `Session clock (required): this session should roll over, because ${why}. If work remains, roll over now. ${rolloverSteps(c)}` } };
+    if (why && !s.rolloverBlocked) {
+      s.rolloverBlocked = now;
+      return { state: s, output: { decision: 'block', reason: `Session clock (required): this session should roll over, because ${why}. If work remains, roll over now. ${rolloverSteps(c)}` } };
+    }
+    if (s.role !== 'main' && c.deliverMin > 0 && sinceDelivery(s) >= c.deliverMin * MIN && !s.deliverBlocked) {
+      s.deliverBlocked = now;
+      return { state: s, output: { decision: 'block', reason: `Session clock (required): the owner has had nothing to review for ${mins(sinceDelivery(s))} active minutes (limit ${c.deliverMin}). Before ending, ${deliverSteps(c).replace(/^C/, 'c')}` } };
+    }
+    return { state: s, output: {} };
   }
   if (event !== 'postToolUse') return { state: s, output: {} };
 
@@ -186,6 +212,19 @@ export function step(state, event, input, now, c) {
       s.rolloverNudged = now;
       const late = mins(now - s.rolloverDue);
       say.push(`Session clock (required): roll over to a new session as soon as possible, because ${why}${late ? `; due for ${late} minutes` : ''}. ${rolloverSteps(c)}`);
+    }
+  }
+  const since = sinceDelivery(s);
+  if (s.role !== 'main' && c.deliverMin > 0) {
+    if (since >= c.deliverMin * MIN) {
+      if (now - s.deliverNudged >= renudge) {
+        s.deliverNudged = now;
+        const late = mins(since - c.deliverMin * MIN);
+        say.push(`Session clock (required): nothing the owner can review for ${mins(since)} active minutes (limit ${c.deliverMin}${late ? `, ${late} over` : ''}). ${deliverSteps(c)}`);
+      }
+    } else if (c.deliverWarnMin > 0 && since >= c.deliverWarnMin * MIN && !s.deliverWarned) {
+      s.deliverWarned = now;
+      say.push(`Session clock: ${mins(since)} active minutes since the owner last got something to review (limit ${c.deliverMin}). Finish the smallest reviewable slice now, or split the item, so the owner can open and judge something before ${c.deliverMin}; then run \`${c.cmd} mark reviewable "<link>"\`.`);
     }
   }
   const sinceReview = s.active - (s.reviewActive ?? 0);
@@ -258,30 +297,33 @@ export function hook(/** @type {string} */ event, /** @type {string} */ raw, /**
 
 function main(/** @type {string[]} */ argv) {
   const [cmd, what, value] = argv;
-  const usage = 'Usage: status [--session <id>] | mark <review | rollover> [--session <id>] | mark role <main | coordinator | worker> | mark mode <design | ux-sooner | assumption | production-ready>';
+  const usage = 'Usage: status [--session <id>] | mark <review | rollover> [--session <id>] | mark reviewable "<link>" [--session <id>] | mark role <main | coordinator | worker> | mark mode <design | ux-sooner | assumption | production-ready>';
   if (cmd === 'mark' || cmd === 'status') {
     const setting = cmd === 'mark' && (what === 'role' || what === 'mode');
-    const rest = argv.slice(cmd === 'status' ? 1 : setting ? 3 : 2);
-    if ((cmd === 'mark' && !['review', 'rollover', 'role', 'mode'].includes(what)) ||
+    const reviewable = cmd === 'mark' && what === 'reviewable';
+    const rest = argv.slice(cmd === 'status' ? 1 : setting || reviewable ? 3 : 2);
+    if ((cmd === 'mark' && !['review', 'rollover', 'reviewable', 'role', 'mode'].includes(what)) ||
         (setting && !(what === 'role' ? ROLES : MODES).includes(value)) ||
+        (reviewable && (!value || !value.trim() || value.startsWith('--'))) ||
         (rest.length && (rest.length !== 2 || rest[0] !== '--session' || !rest[1] || rest[1].startsWith('--')))) {
       console.error(usage);
       return 2;
     }
+    const recorded = reviewable ? 'a reviewable delivery' : `${what} ${value}`;
     let found;
     try {
       found = findSession(clockDir(), process.cwd(), rest[1]);
     } catch (error) {
-      if (setting) {
-        console.log(`The guard hook recorded ${what} ${value} for this session.`);
+      if (setting || reviewable) {
+        console.log(`The guard hook recorded ${recorded} for this session.`);
         return 0;
       }
       console.error(error instanceof Error ? error.message : String(error));
       return 1;
     }
     if (!found) {
-      if (setting && !rest[1]) {
-        console.log(`The guard hook records ${what} ${value} for this session when hooks are on.`);
+      if ((setting || reviewable) && !rest[1]) {
+        console.log(`The guard hook records ${recorded} for this session when hooks are on.`);
         return 0;
       }
       console.error('No matching session clock for this folder.');
@@ -292,13 +334,14 @@ function main(/** @type {string[]} */ argv) {
     if (cmd === 'mark') {
       if (what === 'review') Object.assign(s, { lastReview: now, reviewActive: s.active, reviewNudged: 0 });
       else if (what === 'rollover') s.rolledOver = now;
+      else if (reviewable) delivered(s, now);
       else s[/** @type {'role' | 'mode'} */ (what)] = value;
       writeFileSync(found.file, JSON.stringify(s));
-      console.log(`Marked ${setting ? `${what} ${value}` : what} at ${hhmm(now)}.`);
+      console.log(`Marked ${setting ? `${what} ${value}` : reviewable ? 'a reviewable delivery' : what} at ${hhmm(now)}.`);
       return 0;
     }
     const why = rolloverReason(s, now, config());
-    console.log(`Session started ${hhmm(s.started)} (${mins(s.active)} active min)${s.role ? `, role ${s.role}` : ''}${s.mode ? `, mode ${s.mode}` : ''}, ${s.tools} tool calls, ${s.compactions} compactions; last review ${hhmm(s.lastReview)}; ${s.rolledOver ? `handed over at ${hhmm(s.rolledOver)}` : why ? `roll over now: ${why}` : 'no roll-over due'}.`);
+    console.log(`Session started ${hhmm(s.started)} (${mins(s.active)} active min)${s.role ? `, role ${s.role}` : ''}${s.mode ? `, mode ${s.mode}` : ''}, ${s.tools} tool calls, ${s.compactions} compactions; last review ${hhmm(s.lastReview)}; ${s.rolledOver ? `handed over at ${hhmm(s.rolledOver)}` : why ? `roll over now: ${why}` : 'no roll-over due'}; ${mins(sinceDelivery(s))} active min since the last reviewable delivery (${s.deliverAt ? hhmm(s.deliverAt) : 'none yet'}; limit ${config().deliverMin}).`);
     return 0;
   }
   if (!cmd) {

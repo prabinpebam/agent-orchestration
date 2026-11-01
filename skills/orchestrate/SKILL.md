@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Use before every tool call and reply in any multi-step task, at the start of work, when the owner gives new direction, and when the owner is away. The entry point to agent-orchestration - the mandatory pre-action checklist, the roles (the owner's main chat, one coordinator, bounded workers), the mode ladder (strict design, show me the UX sooner, prove the risky assumption, make this production-ready), the hooks that enforce them (the mandatory session clock and the guard), the loop, and which skill to use next.
+description: Use before every tool call and reply in any multi-step task, at the start of work, when the owner gives new direction, and when the owner is away. The entry point to agent-orchestration - the mandatory pre-action checklist, the mandatory rule that the owner gets something reviewable at least every 60 active minutes, the roles (the owner's main chat, one coordinator, bounded workers), the mode ladder (strict design, show me the UX sooner, prove the risky assumption, make this production-ready), the hooks that enforce them (the mandatory session clock and the guard), the loop, and which skill to use next.
 ---
 
 # Orchestrate
@@ -18,6 +18,7 @@ Before every tool call and every reply, answer each question. A "yes" means stop
 5. **Owner reports.** Is this message for the owner going anywhere but their main chat, or is it not a decision, something to try or a safety blocker, or does it hold IDs or code? → Don't send it, or rewrite it as at most 3 plain lines.
 6. **Ownership.** Is the chat I'm routing to stale (no action in 30 minutes, no acknowledgement), or does another writer own this working copy? → Find the live owner in the registry, or start a fresh one; one writer per working copy.
 7. **Ready to try.** Am I saying "ready" without having opened that review build myself and reached the change through the normal UI? → Open it first.
+8. **Reviewable.** Has the owner gone 40 active minutes without something new to open and judge, or can the item I'm starting not give them one within 60? → Ship the smallest reviewable slice, or split it or carve out a standalone proof of concept; past 60, start nothing else first ([the rule](#reviewable-every-hour-mandatory)).
 
 ## Roles
 
@@ -33,23 +34,32 @@ Before every tool call and every reply, answer each question. A "yes" means stop
 
 Work moves up [the ladder](../execution-modes/SKILL.md#the-ladder): **strict design** (screens only, until the owner approves the design) → **show me the UX sooner** (the working feature, unhardened) → **make this production-ready**. **Prove the risky assumption** is a spike beside it. Attention is **work with me** or **keep going unattended**. Name the mode in every brief, and tell the guard: `node .github/hooks/orchestration-clock.mjs mark mode design|ux-sooner|assumption|production-ready`, or write it in `.agent-orchestration/mode` in the working copy.
 
+## Reviewable every hour (MANDATORY)
+
+The owner gets something they can review at least once every 60 active minutes of work, ideally several times an hour, so a rejection costs at most an hour of work.
+
+- **Counts:** something the owner can open and judge: a running view or screen, a review build link, a filled-in documentation section, a standalone proof of concept, or a decision packet with its evidence. Internal progress, logs, "in progress" notes and scaffolding they can't see don't count.
+- **Plan for it:** size every item, track and worker brief so it yields a reviewable result within 60 minutes; when one can't, split it or carve out a proof of concept the owner can review on its own. Spread parallel tracks' deliveries across the hour, not at its end.
+- **Mark it** when the owner can open it: `node .github/hooks/orchestration-clock.mjs mark reviewable "<link>"`. The clock reminds at 40 active minutes and requires action at 60.
+- **A miss:** at 60 minutes with nothing reviewable, the next action is cutting scope and shipping the smallest reviewable slice; starting more work is not allowed. A miss is the top finding of the next progress review. Only the owner may lengthen the hour.
+
 ## Hooks (MANDATORY)
 
 With the installed Copilot hooks:
 
 - **The guard** (`orchestration-guard.json`, before each tool call) denies shell, subagent, poll and wait tools in a session marked `main`; denies builds, tests and waits in one marked `coordinator`; and denies tests, end-to-end runs, benchmarks and CI waits in the modes `design` and `ux-sooner`.
-- **The clock** (`orchestration-clock.json`) counts active time only, asks for a progress review every 30 active minutes, and asks for a roll-over at its limits.
+- **The clock** (`orchestration-clock.json`) counts active time only, asks for a progress review every 30 active minutes, tracks the time since the last reviewable delivery (a reminder at 40, required action at 60), and asks for a roll-over at its limits.
 
 Mark the role once, first thing: `node .github/hooks/orchestration-clock.mjs mark role main|coordinator|worker`. Never disable a hook, loosen its limits or change a role or mode to get past a denial; only the owner does. Without hooks, this checklist is the guard and you keep the time by hand.
 
 ## The loop
 
 1. **Pick.** The owner's queue first, then every ready item in the work plan, in parallel where they don't share files.
-2. **Brief.** Goal, mode, done when, bounds (time, files, working copy), where its docs go, what it may decide.
+2. **Brief.** Goal, mode, done when, bounds (time, files, working copy), the reviewable result due within 60 minutes, where its docs go, what it may decide.
 3. **Build** the smallest slice the owner can see. When the owner approves a prototype, the next slice wires it into the main app.
 4. **Record.** Requirements, decisions and changed behaviour go into the project's documentation system in the same commit.
 5. **Check** what the mode allows and the change's risk needs ([`stage-validation`](../stage-validation/SKILL.md)); fix; commit.
-6. **Show.** Refresh the review build, open it, then report: something to try, a decision, or a blocker.
+6. **Show.** Refresh the review build, open it, mark it reviewable, then report: something to try, a decision, or a blocker.
 7. **Log** one line ([format](../coordinate/SKILL.md#records)).
 
 ## The clock

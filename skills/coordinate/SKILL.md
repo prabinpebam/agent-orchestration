@@ -12,6 +12,7 @@ description: Use when keeping the coordinator registry and dependency map, dispa
 3. Is the chat I'm routing to stale (no action in 30 minutes, no acknowledgement)? → Mark it stale in the registry and start a fresh one.
 4. Am I about to tell the owner something that isn't a decision, something to try or a safety blocker? → Put it in the records instead.
 5. Is a worker's "done" unverified (no commit seen, no build opened)? → It's "in progress" until verified.
+6. Can an item I'm dispatching not yield something the owner can review within 60 minutes, or would the tracks' deliveries bunch at the end of the hour? → Split it or carve out a standalone proof of concept, and stagger the tracks.
 
 ## Records
 
@@ -22,7 +23,7 @@ description: Use when keeping the coordinator registry and dependency map, dispa
 | Progress log | One line per step | Append only |
 | Handoff | What a successor needs to resume | One page |
 
-Registry row: `| Task | Owner worker | Working copy | State | Trigger | Completion signal |`. The first lines name the current coordinator and the owner's main chat.
+Registry row: `| Task | Owner worker | Working copy | State | Reviewable by | Trigger | Completion signal |`. The first lines name the current coordinator, the owner's main chat and when the owner last got something reviewable.
 
 Log line: `2026-01-31 14:05 [mode · attention] <item>: <what happened, in words> (<commit or evidence>)`. More words than codes. Workers end with `done:` or `blocked:` and the checks they ran.
 
@@ -31,12 +32,13 @@ Log line: `2026-01-31 14:05 [mode · attention] <item>: <what happened, in words
 1. Read unread messages, completion records and live workers.
 2. Update the registry: states, stale chats, the dependency map.
 3. Verify each reported completion: the commit is on the remote, the review build shows it.
-4. Dispatch every ready item, each with its own worker, working copy and brief ([the loop](../orchestrate/SKILL.md#the-loop)). Check for an existing owner first.
-5. End the turn. No sleeps, polling loops or watchers; completions arrive as messages.
+4. Dispatch every ready item, each with its own worker, working copy and brief ([the loop](../orchestrate/SKILL.md#the-loop)). Check for an existing owner first. Size each to a reviewable result within 60 minutes and stagger the "reviewable by" times across the hour ([the rule](../orchestrate/SKILL.md#reviewable-every-hour-mandatory)).
+5. If the owner's last reviewable delivery is 60 active minutes old, the next dispatch is the smallest slice that can reach them, before any new item.
+6. End the turn. No sleeps, polling loops or watchers; completions arrive as messages.
 
 ## Messages
 
-- **To the owner's main chat only**, and only: a decision only the owner can make, something new ready to try, or a safety blocker. At most 3 plain lines, no IDs, codes or jargon.
+- **To the owner's main chat only**, and only: a decision only the owner can make, something new ready to try, or a safety blocker. At most 3 plain lines, no IDs, codes or jargon. Something new to try reaches it at least every 60 active minutes, each with its link, and is marked reviewable.
 - Everything else (acknowledgements, milestones, dispatch and transfer notes) goes to the coordinator and the records. Every brief and handoff carries this rule.
 - New direction from the owner goes to the current coordinator named in the registry; never create a second one.
 
@@ -49,4 +51,4 @@ Log line: `2026-01-31 14:05 [mode · attention] <item>: <what happened, in words
 
 ## Handoff
 
-The goal and mode · what's done, with commits · what's running, with its owner · what's next · blockers and owner decisions pending · the review build and how to open it · the clock's state. Plain words, one page.
+The goal and mode · what's done, with commits · what's running, with its owner · what's next, and when the owner sees it · blockers and owner decisions pending · the review build and how to open it · the last reviewable delivery · the clock's state. Plain words, one page.

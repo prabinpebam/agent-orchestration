@@ -18,6 +18,15 @@ Pick the mode from what the owner needs next, name it in every brief, and tell t
 
 **MANDATORY: no tests on unapproved designs.** Never run the full suite or any unnecessary test on a design the owner hasn't explicitly approved, and never run the full suite in show me the UX sooner. Silence, green checks, a merge or a reviewer's score isn't approval. The owner's look at the build is the test.
 
+**Every mode delivers something reviewable at least every 60 active minutes** ([the rule](../orchestrate/SKILL.md#reviewable-every-hour-mandatory)):
+
+| Mode | What the owner reviews within the hour |
+| --- | --- |
+| Strict design | A screen or set of variants they can open |
+| Show me the UX sooner | The working slice in the review build |
+| Make this production-ready | The increment so far in the review build, or a decision packet with its evidence; split work that can't show either |
+| Prove the risky assumption | The spike's result against its criterion, or a standalone proof of concept |
+
 ## Strict design
 
 - Show before building: the first deliverable is something the owner can open within minutes, never code behind it.
@@ -36,7 +45,7 @@ Pick the mode from what the owner needs next, name it in every brief, and tell t
 | | Work with me | Keep going unattended |
 | --- | --- | --- |
 | When | The owner is here, testing and giving feedback | The owner is away, or says "unattended" |
-| Rhythm | Their queue first, one item at a time, about 15 minutes from a request to something they can see | 45-minute time-boxes on the critical path |
+| Rhythm | Their queue first, one item at a time, about 15 minutes from a request to something they can see | 45-minute time-boxes on the critical path, each ending in something reviewable |
 | Builders | One by default; two only on separate files, each visible within 15 minutes | At most two, on areas that don't overlap |
 | Ends with | Each fix in the review build | A handoff for the owner's return, naming the review build |
 

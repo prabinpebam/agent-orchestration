@@ -37,5 +37,6 @@ The mode sets the ceiling ([the ladder](../execution-modes/SKILL.md#the-ladder))
 
 - Built from the last validated commit only, in its own checkout, with its own port or user-data folder and demo data, so development never disturbs it.
 - Refreshed at each validated increment; named, with how to open it, in every report and handoff.
+- **Checks never push a delivery past the hour.** The owner gets something reviewable at least every 60 active minutes ([the rule](../orchestrate/SKILL.md#reviewable-every-hour-mandatory)); when the checks a change needs won't fit, show the slice validated so far, or a decision packet with evidence, and keep checking after.
 - **Before calling anything ready to try:** open that build yourself, reach the change through the normal UI (not behind a flag), and check it against the design rules. If it isn't there, it isn't ready.
 - Downloads come only from approved sources.

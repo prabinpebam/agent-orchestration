@@ -66,14 +66,15 @@ test('MANDATORY: a short pre-action checklist of yes/no questions comes first in
     const text = read(...p);
     assert.match(text.split('\n## ')[1] ?? '', /^Pre-action checklist \(MANDATORY\)/, `${p.join('/')}: the first section is the checklist`);
     const items = (text.split('\n## ')[1].split('\n## ')[0].match(/^\d+\. .*$/gm) ?? []);
-    assert.ok(items.length >= 3 && items.length <= 7, `${p.join('/')}: 3 to 7 items`);
+    assert.ok(items.length >= 3 && items.length <= 8, `${p.join('/')}: 3 to 8 items`);
     for (const i of items) assert.match(i, /\? → /, `${p.join('/')}: "${i.slice(0, 40)}" is a question with its fix`);
   }
 });
 
-test('the checklist covers the audit\'s detection signals: role, mode, completion, docs, owner reports, ownership, ready to try', () => {
+test('the checklist covers the audit\'s detection signals: role, mode, completion, docs, owner reports, ownership, ready to try, reviewable', () => {
   const list = read('skills', 'orchestrate', 'SKILL.md').split('\n## ')[1];
-  for (const label of ['Role', 'Mode', 'Completion', 'Docs', 'Owner reports', 'Ownership', 'Ready to try']) assert.match(list, new RegExp(`\\*\\*${label}\\.\\*\\*`), label);
+  for (const label of ['Role', 'Mode', 'Completion', 'Docs', 'Owner reports', 'Ownership', 'Ready to try', 'Reviewable']) assert.match(list, new RegExp(`\\*\\*${label}\\.\\*\\*`), label);
+  assert.match(list, /40 active minutes without something new to open and judge[^\n]*within 60\? → Ship the smallest reviewable slice[^\n]*past 60, start nothing else first/);
   assert.match(list, /main chat about to run a shell, build, test, subagent, poll or wait/);
   assert.match(list, /any test before the owner approved the design, or the full suite outside production-ready/);
   assert.match(list, /Say "In progress:" with what's running, who has it and when the owner will see it/);
@@ -105,6 +106,33 @@ test('MANDATORY: no tests on unapproved designs, stated once in the ladder and l
   assert.match(read('skills', 'execution-modes', 'SKILL.md'), /never run the full suite in show me the UX sooner/);
   assert.match(read('skills', 'orchestrate', 'SKILL.md'), /\[mode\]\(\.\.\/execution-modes\/SKILL\.md#the-ladder\)/);
   assert.match(read('skills', 'stage-validation', 'SKILL.md'), /The owner has explicitly signed off on the change's design/);
+});
+
+test('MANDATORY: something reviewable every 60 active minutes, stated once in full and applied in every skill, the agent, the installed section and the templates', () => {
+  const entry = read('skills', 'orchestrate', 'SKILL.md');
+  const rule = entry.split('## Reviewable every hour (MANDATORY)')[1]?.split('\n## ')[0] ?? '';
+  assert.match(rule, /at least once every 60 active minutes of work, ideally several times an hour, so a rejection costs at most an hour/);
+  assert.match(rule, /running view or screen, a review build link, a filled-in documentation section, a standalone proof of concept, or a decision packet/);
+  assert.match(rule, /Internal progress, logs, "in progress" notes and scaffolding they can't see don't count/);
+  assert.match(rule, /split it or carve out a proof of concept[^\n]*Spread parallel tracks' deliveries across the hour, not at its end/);
+  assert.match(rule, /mark reviewable "<link>"[^\n]*reminds at 40 active minutes and requires action at 60/);
+  assert.match(rule, /cutting scope and shipping the smallest reviewable slice; starting more work is not allowed\. A miss is the top finding/);
+  const owners = [...SKILLS.map((s) => ['skills', s, 'SKILL.md']), ['agents', 'throughput-reviewer.agent.md']].filter((p) => read(...p).includes('## Reviewable every hour (MANDATORY)'));
+  assert.deepEqual(owners, [['skills', 'orchestrate', 'SKILL.md']], 'stated in full in one place');
+  for (const s of SKILLS) assert.match(read('skills', s, 'SKILL.md'), /60 active minutes|within 60 minutes/, `${s} applies it`);
+  for (const s of SKILLS.filter((x) => x !== 'orchestrate')) assert.match(read('skills', s, 'SKILL.md'), /\(\.\.\/orchestrate\/SKILL\.md#reviewable-every-hour-mandatory\)/, `${s} links the rule`);
+  const modes = read('skills', 'execution-modes', 'SKILL.md');
+  for (const m of ['Strict design', 'Show me the UX sooner', 'Make this production-ready', 'Prove the risky assumption']) assert.match(modes, new RegExp(`^\\| ${m} \\| `, 'm'), `${m} delivers within the hour`);
+  assert.match(read('skills', 'coordinate', 'SKILL.md'), /\| Reviewable by \|[\s\S]*stagger the "reviewable by" times across the hour[\s\S]*60 active minutes old, the next dispatch is the smallest slice/);
+  const pr = read('skills', 'progress-review', 'SKILL.md');
+  assert.match(pr, /^1\. \*\*Reviewable:\*\*[^\n]*a miss and the top finding, ahead of every other/m);
+  assert.match(read('agents', 'throughput-reviewer.agent.md'), /60 active minutes or more without something they can open and judge\? → That's the top finding, ahead of every other/);
+  assert.match(read('skills', 'stage-validation', 'SKILL.md'), /Checks never push a delivery past the hour/);
+  assert.match(section(null), /\*\*Mandatory: the owner gets something they can review at least every 60 active minutes\*\*/);
+  assert.match(section(null), /- \*\*Owner review cadence:\*\* [^\n]*mark reviewable/);
+  assert.match(read('templates', 'work-plan.md'), /Reviewable by/);
+  assert.match(read('templates', 'handoff.md'), /\*\*Last reviewable:\*\*/);
+  assert.match(read('README.md'), /mark reviewable "<link>"/);
 });
 
 test('handing over is not completion, and a repeated host reminder gets no new content', () => {

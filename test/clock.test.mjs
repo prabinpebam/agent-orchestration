@@ -34,6 +34,7 @@ const denied = (o) => o.permissionDecision === 'deny';
 
 test('a session start says what the clock asks for and how to mark the role and mode', () => {
   const [o] = run([[0, 'sessionStart']]);
+  assert.match(said(o), /something the owner can review at least every 60 active minutes \(mark each with `node \.github\/hooks\/orchestration-clock\.mjs mark reviewable "<link>"`\)/);
   assert.match(said(o), /progress review every 30 active minutes/);
   assert.match(said(o), /90 active minutes, 300 tool calls, 2 compactions \(idle time not counted; the main chat never rolls over\)/);
   assert.match(said(o), /mark role main\|coordinator\|worker/);
@@ -114,7 +115,7 @@ test('a coordinator rolls over only at its context limits, never on time alone',
 });
 
 test('nobody is asked to roll over while the owner is steering', () => {
-  const out = run([[0, 'sessionStart'], ...busy(5, 90), [91, 'userPromptSubmitted', {}], tool(92), tool(98), [99, 'agentStop', {}], tool(102), [103, 'agentStop', {}]], { ...C, reviewMin: 0 });
+  const out = run([[0, 'sessionStart'], ...busy(5, 90), [91, 'userPromptSubmitted', {}], tool(92), tool(98), [99, 'agentStop', {}], tool(102), [103, 'agentStop', {}]], { ...C, reviewMin: 0, deliverMin: 0 });
   const n = out.length;
   assert.equal(said(out[n - 5]), '', 'just after a prompt');
   assert.equal(said(out[n - 4]), '');
@@ -124,7 +125,7 @@ test('nobody is asked to roll over while the owner is steering', () => {
 });
 
 test('worker launches never silence the clock or weaken a limit', () => {
-  assert.deepEqual([DEFAULTS.reviewMin, DEFAULTS.rolloverMin, DEFAULTS.rolloverTools, DEFAULTS.rolloverCompactions, DEFAULTS.idleMin, DEFAULTS.steerMin], [30, 90, 300, 2, 5, 10]);
+  assert.deepEqual([DEFAULTS.reviewMin, DEFAULTS.rolloverMin, DEFAULTS.rolloverTools, DEFAULTS.rolloverCompactions, DEFAULTS.idleMin, DEFAULTS.steerMin, DEFAULTS.deliverWarnMin, DEFAULTS.deliverMin], [30, 90, 300, 2, 5, 10, 40, 60]);
   for (const name of ['create_session', 'new_session']) {
     assert.equal(recognise(name, { prompt: 'Read the handoff and resume' }), null);
     const start = step(null, 'sessionStart', {}, T0, C).state;
@@ -135,7 +136,7 @@ test('worker launches never silence the clock or weaken a limit', () => {
 });
 
 test('at the end of a turn with a roll-over due, it asks for one more turn, once, and never when already continuing', () => {
-  const due = run([[0, 'sessionStart'], ...busy(5, 90), [91, 'agentStop', {}], [92, 'agentStop', {}]], { ...C, reviewMin: 0 });
+  const due = run([[0, 'sessionStart'], ...busy(5, 90), [91, 'agentStop', {}], [92, 'agentStop', {}]], { ...C, reviewMin: 0, deliverMin: 0 });
   assert.equal(due.at(-2).decision, 'block');
   assert.match(String(due.at(-2).reason), /should roll over, because it has been active 9\d minutes/);
   assert.deepEqual(due.at(-1), {}, 'once');
@@ -204,6 +205,55 @@ test('limits come from the hook environment; bad values fall back to the default
   assert.deepEqual(config({ AO_REVIEW_MIN: '15', AO_ROLLOVER_MIN: '0', AO_ROLLOVER_TOOLS: 'lots', AO_IDLE_MIN: '3', AO_CLOCK_CMD: 'node x.mjs' }), { ...DEFAULTS, reviewMin: 15, rolloverMin: 0, idleMin: 3, cmd: 'node x.mjs' });
 });
 
+test('the reviewable limit can be tightened by configuration, never loosened or turned off', () => {
+  for (const v of ['90', '0', '61', 'never', '']) assert.equal(config({ AO_DELIVER_MIN: v }).deliverMin, 60, `AO_DELIVER_MIN=${v}`);
+  assert.deepEqual([config({ AO_DELIVER_MIN: '30' }).deliverMin, config({ AO_DELIVER_MIN: '30' }).deliverWarnMin], [30, 20]);
+  assert.equal(config({ AO_DELIVER_WARN_MIN: '20' }).deliverWarnMin, 20);
+  assert.equal(config({ AO_DELIVER_WARN_MIN: '75' }).deliverWarnMin, 40, 'a reminder after the limit falls back');
+});
+
+test('nothing reviewable: a reminder at 40 active minutes, required action at 60 and every 5 minutes after, idle time not counted', () => {
+  const R = { ...C, reviewMin: 0 };
+  const out = run([[0, 'sessionStart'], ...busy(5, 35), tool(39), tool(40), tool(45), tool(50), tool(55), tool(59), tool(60), tool(62), tool(65)], R);
+  const at = (m) => said(out[out.length - [65, 62, 60, 59, 55, 50, 45, 40, 39].indexOf(m) - 1]);
+  assert.equal(at(39), '');
+  assert.match(at(40), /^Session clock: 40 active minutes since the owner last got something to review \(limit 60\)/);
+  assert.match(at(40), /mark reviewable "<link>"/);
+  for (const m of [45, 50, 55, 59]) assert.equal(at(m), '', `${m}: the reminder comes once`);
+  assert.match(at(60), /^Session clock \(required\): nothing the owner can review for 60 active minutes \(limit 60\)\. Cut scope and ship the smallest slice[^\n]*start no other work first/);
+  assert.match(at(60), /A miss is the top finding of the next progress review/);
+  assert.equal(at(62), '', 'not again within 5 minutes');
+  assert.match(at(65), /65 active minutes \(limit 60, 5 over\)/);
+  const idle = run([[0, 'sessionStart'], tool(1), tool(300), tool(600)], R);
+  for (const o of idle.slice(1)) assert.equal(said(o), '', 'idle time never counts');
+});
+
+test('marking a reviewable delivery starts the hour again, from the guard hook or the command line, and never for another session', () => {
+  const R = { ...C, reviewMin: 0, rolloverMin: 0 };
+  const mark = (m, extra = '') => pre(m, 'powershell', { command: `node .github/hooks/orchestration-clock.mjs mark reviewable "http://127.0.0.1:8080/"${extra}` });
+  const out = run([[0, 'sessionStart'], ...busy(5, 60), mark(61), ...busy(65, 95), tool(100), tool(101)], R);
+  assert.equal(out.state.deliverActive, 61 * MIN);
+  assert.equal(said(out.at(-2)), '', '39 active minutes after the mark');
+  assert.match(said(out.at(-1)), /40 active minutes since the owner last got something to review/);
+  const other = run([[0, 'sessionStart'], ...busy(5, 60), mark(61, ' --session someone-else'), tool(62)], R);
+  assert.equal(other.state.deliverAt, 0, 'a mark for another session is left to the command line');
+  for (const command of ['node .github/hooks/orchestration-clock.mjs mark reviewable', 'node .github/hooks/orchestration-clock.mjs mark reviewable ""', 'node .github/hooks/orchestration-clock.mjs mark review']) {
+    assert.equal(run([[0, 'sessionStart'], pre(1, 'powershell', { command })], R).state.deliverAt, 0, command);
+  }
+});
+
+test('nothing reviewable at the end of a turn: blocked once per missed hour, never for the main chat or while the owner is steering', () => {
+  const R = { ...C, reviewMin: 0 };
+  const out = run([[0, 'sessionStart'], ...busy(5, 60), [61, 'agentStop', {}], [62, 'agentStop', {}]], R);
+  assert.equal(out.at(-2).decision, 'block');
+  assert.match(String(out.at(-2).reason), /^Session clock \(required\): the owner has had nothing to review for 61 active minutes \(limit 60\)\. Before ending, cut scope/);
+  assert.deepEqual(out.at(-1), {}, 'once');
+  const main = { ...step(null, 'sessionStart', { cwd: '/p' }, T0, C).state, role: 'main' };
+  for (const o of run([...busy(0, 120), [121, 'agentStop', {}]], R, main)) assert.deepEqual(o, {});
+  assert.deepEqual(run([[0, 'sessionStart'], ...busy(5, 60), [61, 'userPromptSubmitted', {}], [62, 'agentStop', {}]], R).at(-1), {});
+  assert.deepEqual(run([[0, 'sessionStart'], ...busy(5, 60), [61, 'agentStop', { stopHookActive: true }]], R).at(-1), {});
+});
+
 test('the hook keeps one state file per session, reads both payload styles, upgrades old state, and never fails the tool', () => {
   const dir = mkdtempSync(join(tmpdir(), 'clock-'));
   const env = { AO_CLOCK_DIR: dir };
@@ -229,7 +279,10 @@ test('from the command line: a hook event on stdin, then mark and status for the
   assert.match(execFileSync(process.execPath, [clock, 'mark', 'review'], { cwd, env, encoding: 'utf8' }), /Marked review/);
   assert.match(execFileSync(process.execPath, [clock, 'mark', 'role', 'worker'], { cwd, env, encoding: 'utf8' }), /Marked role worker/);
   assert.match(execFileSync(process.execPath, [clock, 'mark', 'mode', 'design'], { cwd, env, encoding: 'utf8' }), /Marked mode design/);
-  assert.match(execFileSync(process.execPath, [clock, 'status'], { cwd, env, encoding: 'utf8' }), /role worker, mode design, 0 tool calls, 0 compactions; last review \d\d:\d\d; no roll-over due/);
+  assert.match(execFileSync(process.execPath, [clock, 'status'], { cwd, env, encoding: 'utf8' }), /role worker, mode design, 0 tool calls, 0 compactions; last review \d\d:\d\d; no roll-over due; 0 active min since the last reviewable delivery \(none yet; limit 60\)/);
+  assert.match(execFileSync(process.execPath, [clock, 'mark', 'reviewable', 'http://127.0.0.1:8080/'], { cwd, env, encoding: 'utf8' }), /Marked a reviewable delivery at \d\d:\d\d/);
+  assert.match(execFileSync(process.execPath, [clock, 'status'], { cwd, env, encoding: 'utf8' }), /since the last reviewable delivery \(\d\d:\d\d; limit 60\)/);
+  for (const bad of [['mark', 'reviewable'], ['mark', 'reviewable', ' '], ['mark', 'reviewable', '--session', 'abc']]) assert.equal(spawnSync(process.execPath, [clock, ...bad], { cwd, env }).status, 2, bad.join(' '));
   assert.equal(spawnSync(process.execPath, [clock, 'mark', 'role', 'boss'], { cwd, env }).status, 2);
   assert.equal(spawnSync(process.execPath, [clock, 'mark', 'mode', 'fast'], { cwd, env }).status, 2);
 });

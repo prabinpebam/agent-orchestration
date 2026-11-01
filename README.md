@@ -8,7 +8,7 @@ It decides how work runs, not what to build. Product intent comes from the proje
 
 | Part | What it does |
 | --- | --- |
-| [`orchestrate`](skills/orchestrate/SKILL.md) | The entry point: the **pre-action checklist** run before every tool call and reply, the roles, the hooks, the loop and the clock |
+| [`orchestrate`](skills/orchestrate/SKILL.md) | The entry point: the **pre-action checklist** run before every tool call and reply, **something reviewable every hour**, the roles, the hooks, the loop and the clock |
 | [`execution-modes`](skills/execution-modes/SKILL.md) | The mode ladder: **strict design** → **show me the UX sooner** → **make this production-ready**, plus **prove the risky assumption**; **work with me** or **keep going unattended** |
 | [`stage-validation`](skills/stage-validation/SKILL.md) | Checks scoped to mode and risk, integrating and merging, the review build |
 | [`progress-review`](skills/progress-review/SKILL.md) | The review every 30 active minutes |
@@ -27,11 +27,12 @@ The hard rules are marked **MANDATORY**, and there are few of them. Each lives i
 | A coordinator's turns stay short | The guard denies builds, tests and waits in a session marked `coordinator` | Checklist 1 |
 | No tests on an unapproved design; never the full suite in show me the UX sooner | The guard denies test, end-to-end, benchmark and CI-wait commands in modes `design` and `ux-sooner` | Checklist 2 |
 | Handing over is not completion | — | Checklist 3 |
+| The owner gets something reviewable at least every 60 active minutes (ideally several times an hour); a miss means cutting scope, never starting more | The clock reminds at 40 active minutes since the last `mark reviewable` and requires action at 60, blocking the end of the turn once; the limit can only be tightened | Checklist 8; the top finding of a progress review |
 | Every owner instruction goes into the project's documentation system | — | Checklist 4 |
 | Owner reports go only to the main chat, as 3 plain lines | — | Checklist 5 |
 | Reviews every 30 active minutes; roll-overs at limits, idle time not counted; the main chat never rolls over; coordinators only at context limits; nobody while the owner is steering | The clock | Kept by hand |
 
-Each session marks its role once with `node .github/hooks/orchestration-clock.mjs mark role main|coordinator|worker`. The mode is set with `mark mode design|ux-sooner|assumption|production-ready`, or by writing it in `.agent-orchestration/mode` in the working copy. The guard reads tool calls only to recognise commands; it stores and prints nothing from them. It catches its own errors and allows the call. If Node or the script itself is missing, Copilot treats the failed hook as a denial of every tool call, so keep `.github/hooks/` complete.
+Each session marks its role once with `node .github/hooks/orchestration-clock.mjs mark role main|coordinator|worker`. The mode is set with `mark mode design|ux-sooner|assumption|production-ready`, or by writing it in `.agent-orchestration/mode` in the working copy. Each time the owner can open something new (a running view, a review build link, a doc section, a standalone proof of concept or a decision packet), the session runs `mark reviewable "<link>"`; logs, "in progress" notes and invisible scaffolding don't count. `AO_DELIVER_MIN` (60) and `AO_DELIVER_WARN_MIN` (40) in the hook configuration may lower the limits, never raise them. The guard reads tool calls only to recognise commands; it stores and prints nothing from them. It catches its own errors and allows the call. If Node or the script itself is missing, Copilot treats the failed hook as a denial of every tool call, so keep `.github/hooks/` complete.
 
 ## Install
 
@@ -51,7 +52,7 @@ The installer copies the skills and the agent where each tool looks for them:
 
 For Copilot it also installs the clock and guard hooks in `.github/hooks/` (`orchestration-clock.json`, `orchestration-guard.json`); an existing configuration is kept.
 
-It adds an **Orchestration** section to `AGENTS.md`, with project facts to fill in: product intent, the documentation system, reference products, the work plan, commands by tier, the progress log, the owner's main chat, the registry, branches and merges, the review build, and the limits. Run it again to update: filled-in facts are kept, and new facts appear as placeholders.
+It adds an **Orchestration** section to `AGENTS.md`, with project facts to fill in: product intent, the documentation system, reference products, the work plan, commands by tier, the progress log, the owner's main chat, the registry, branches and merges, the review build, the owner's review cadence and links, and the limits. Run it again to update: filled-in facts are kept, and new facts appear as placeholders.
 
 ## Using it with other kits
 
